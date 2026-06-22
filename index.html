@@ -342,7 +342,7 @@
         </div>
         <div class="field">
           <label for="editDesc">Description (optional)</label>
-          <textarea id="editDesc" rows="2" maxlength="300" placeholder="Shown on hover"></textarea>
+          <textarea id="editDesc" rows="2" maxlength="300" placeholder="Shown on hover — ⌘/Ctrl + Enter to save"></textarea>
         </div>
       </div>
       <div class="modal-actions">
@@ -836,7 +836,7 @@ function closeEditor() {
   editingId = null;
 }
 
-document.getElementById("editSave").addEventListener("click", () => {
+function saveEditor() {
   if (!editingId) return;
   const item = state.items[editingId];
   item.name = editName.value.trim() || item.name;
@@ -844,6 +844,15 @@ document.getElementById("editSave").addEventListener("click", () => {
   closeEditor();
   render();
   persist();
+}
+document.getElementById("editSave").addEventListener("click", saveEditor);
+// Enter saves: plain Enter in the single-line name field; Cmd/Ctrl+Enter in the
+// multi-line description (so plain Enter there still inserts a newline).
+editName.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); saveEditor(); }
+});
+editDesc.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEditor(); }
 });
 document.getElementById("editCancel").addEventListener("click", closeEditor);
 document.getElementById("editDelete").addEventListener("click", () => {
