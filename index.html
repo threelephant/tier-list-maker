@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tier List Maker</title>
+<style>
+  :root {
+    --bg: #15161b;
+    --panel: #1f2128;
+    --panel-2: #262934;
+    --line: #33363f;
+    --text: #e9eaed;
+    --muted: #9aa0ac;
+    --accent: #6ea8fe;
+    --danger: #ff6b6b;
+    --radius: 10px;
+    --cell: 92px;
+    --shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Toolbar ---------- */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 18px;
+    background: rgba(21,22,27,.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 {
+    font-size: 17px;
+    margin: 0;
+    margin-right: auto;
+    letter-spacing: .2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  header h1 .logo { font-size: 20px; }
+
+  .btn {
+    appearance: none;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 8px 13px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, transform .04s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #2f323d; border-color: #444956; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b1730; }
+  .btn.primary:hover { background: #8bbbff; }
+  .btn.ghost { background: transparent; }
+  .btn.danger:hover { background: #3a2226; border-color: var(--danger); color: #ffb4b4; }
+
+  /* ---------- Board ---------- */
+  main { padding: 18px; max-width: 1200px; margin: 0 auto; }
+
+  .board { display: flex; flex-direction: column; gap: 8px; }
+
+  .tier {
+    display: flex;
+    align-items: stretch;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: calc(var(--cell) + 24px);
+  }
+
+  .tier-label {
+    position: relative;
+    flex: 0 0 96px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 8px 6px;
+    font-weight: 800;
+    font-size: 22px;
+    line-height: 1.1;
+    word-break: break-word;
+    cursor: text;
+    outline: none;
+    user-select: none;
+  }
+  .tier-label:focus { box-shadow: inset 0 0 0 2px rgba(255,255,255,.55); }
+  .tier-label .color-input {
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 22px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity .12s;
+  }
+  .tier:hover .tier-label .color-input { opacity: .85; }
+  .tier-label .color-input::-webkit-color-swatch-wrapper { padding: 0; }
+  .tier-label .color-input::-webkit-color-swatch { border: 1px solid rgba(0,0,0,.4); border-radius: 3px; }
+
+  .dropzone {
+    flex: 1 1 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 8px;
+    min-height: calc(var(--cell) + 24px);
+    transition: background .12s, box-shadow .12s;
+  }
+  .dropzone.drag-over { background: rgba(110,168,254,.10); box-shadow: inset 0 0 0 2px rgba(110,168,254,.5); }
+
+  .tier-controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px;
+    border-left: 1px solid var(--line);
+    background: rgba(0,0,0,.12);
+  }
+  .tier-controls button {
+    width: 26px; height: 24px;
+    display: grid; place-items: center;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+  }
+  .tier-controls button:hover { color: var(--text); background: #30333d; }
+  .tier-controls button.del:hover { color: #ffb4b4; border-color: var(--danger); }
+  .tier-controls button:disabled { opacity: .3; cursor: default; }
+
+  .add-tier {
+    margin-top: 4px;
+    width: 100%;
+    border: 1px dashed var(--line);
+    background: transparent;
+    color: var(--muted);
+    padding: 11px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .add-tier:hover { color: var(--text); border-color: #4a4f5c; background: var(--panel); }
+
+  /* ---------- Pool ---------- */
+  .pool {
+    margin-top: 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .pool-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px; font-weight: 700; letter-spacing: .6px;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .pool .dropzone { min-height: calc(var(--cell) + 28px); }
+  .hint {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 22px 8px;
+    margin: auto;
+    text-align: center;
+    pointer-events: none;
+  }
+  .hint kbd {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; font-size: 12px;
+  }
+
+  /* ---------- Card ---------- */
+  .card {
+    position: relative;
+    width: var(--cell);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: grab;
+    box-shadow: var(--shadow);
+    transition: transform .08s, box-shadow .08s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+  .card.dragging { opacity: .4; cursor: grabbing; }
+  .card img {
+    display: block;
+    width: 100%;
+    height: var(--cell);
+    object-fit: cover;
+    background: #0d0e12;
+    pointer-events: none;
+  }
+  .card .cap {
+    padding: 4px 5px;
+    font-size: 11px;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card .del {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 20px; height: 20px;
+    border: none; border-radius: 50%;
+    background: rgba(10,11,15,.72);
+    color: #fff; font-size: 14px; line-height: 1;
+    cursor: pointer;
+    display: none;
+    place-items: center;
+  }
+  .card:hover .del { display: grid; }
+  .card .del:hover { background: var(--danger); }
+
+  .card.placeholder {
+    background: transparent;
+    border: 2px dashed var(--accent);
+    box-shadow: none;
+    height: calc(var(--cell) + 23px);
+    pointer-events: none;
+  }
+  .card.placeholder:hover { transform: none; }
+
+  /* ---------- Modal ---------- */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.55);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 50; padding: 20px;
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    width: 100%; max-width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.55);
+    overflow: hidden;
+  }
+  .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .modal .preview {
+    width: 100%; height: 150px; object-fit: contain;
+    background: #0d0e12; border: 1px solid var(--line); border-radius: 8px;
+  }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
+  .field input[type=text], .field textarea {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 10px; font-size: 14px; font-family: inherit; resize: vertical;
+  }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+  .modal-actions { display: flex; gap: 8px; padding: 0 18px 18px; }
+  .modal-actions .spacer { flex: 1; }
+
+  /* ---------- Toasts ---------- */
+  #toasts {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; gap: 8px; z-index: 80; align-items: center;
+  }
+  .toast {
+    background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--text); padding: 10px 16px; border-radius: 9px;
+    font-size: 13px; box-shadow: var(--shadow);
+    animation: pop .18s ease-out;
+  }
+  .toast.err { border-color: var(--danger); color: #ffc2c2; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  body.file-dragging .pool .dropzone { background: rgba(110,168,254,.08); box-shadow: inset 0 0 0 2px rgba(110,168,254,.4); }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="logo">🏆</span> Tier List Maker</h1>
+    <button class="btn primary" id="addItemBtn">+ Add items</button>
+    <button class="btn" id="exportPngBtn">Export PNG</button>
+    <button class="btn" id="exportJsonBtn">Export JSON</button>
+    <button class="btn" id="importJsonBtn">Import JSON</button>
+    <button class="btn danger ghost" id="resetBtn">Reset</button>
+  </header>
+
+  <main>
+    <div class="board" id="board"></div>
+    <button class="add-tier" id="addTierBtn">+ Add tier</button>
+
+    <section class="pool">
+      <div class="pool-head">Unranked</div>
+      <div class="dropzone" id="pool" data-container="pool"></div>
+    </section>
+  </main>
+
+  <!-- Item editor -->
+  <div class="overlay" id="editorOverlay">
+    <div class="modal">
+      <div class="modal-body">
+        <img class="preview" id="editPreview" alt="" />
+        <div class="field">
+          <label for="editName">Name</label>
+          <input type="text" id="editName" maxlength="80" placeholder="Item name" />
+        </div>
+        <div class="field">
+          <label for="editDesc">Description (optional)</label>
+          <textarea id="editDesc" rows="2" maxlength="300" placeholder="Shown on hover"></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="editReplace">Replace image</button>
+        <button class="btn danger ghost" id="editDelete">Delete</button>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="editCancel">Cancel</button>
+        <button class="btn primary" id="editSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toasts"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   State
+   ============================================================ */
+const DEFAULT_TIERS = [
+  { name: "S", color: "#ff7f7f" },
+  { name: "A", color: "#ffbf7f" },
+  { name: "B", color: "#ffdf7f" },
+  { name: "C", color: "#ffff7f" },
+  { name: "D", color: "#bfff7f" },
+  { name: "F", color: "#7fff7f" },
+];
+
+let state = null;        // { version, tiers:[{id,name,color,items:[]}], pool:[], items:{} }
+let itemCounter = 0;     // for default "Item N" names
+
+const uid = () =>
+  (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+
+function defaultState() {
+  return {
+    version: 1,
+    tiers: DEFAULT_TIERS.map((t) => ({ id: uid(), name: t.name, color: t.color, items: [] })),
+    pool: [],
+    items: {},
+  };
+}
+
+/* ============================================================
+   Persistence (IndexedDB)
+   ============================================================ */
+let db = null;
+let saveTimer = null;
+
+function openDB() {
+  return new Promise((resolve) => {
+    let req;
+    try { req = indexedDB.open("tierlist", 1); }
+    catch (e) { return resolve(null); }
+    req.onupgradeneeded = () => req.result.createObjectStore("state");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+function loadState() {
+  return new Promise((resolve) => {
+    if (!db) return resolve(null);
+    try {
+      const req = db.transaction("state", "readonly").objectStore("state").get("current");
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (!db) return;
+    try {
+      db.transaction("state", "readwrite").objectStore("state").put(state, "current");
+    } catch (e) { /* ignore */ }
+  }, 250);
+}
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+function toast(msg, type) {
+  const el = document.createElement("div");
+  el.className = "toast" + (type === "err" ? " err" : "");
+  el.textContent = msg;
+  document.getElementById("toasts").appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+// Pick text color (black/white) for readability on a given hex background.
+function contrastColor(hex) {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? "#1a1a1a" : "#ffffff";
+}
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Open a file picker and resolve with selected files.
+function pickFiles(accept, multiple) {
+  return new Promise((resolve) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = accept;
+    inp.multiple = !!multiple;
+    inp.onchange = () => resolve([...inp.files]);
+    inp.click();
+  });
+}
+
+// Downscale an image blob/file to a max dimension and return a data URL.
+async function toDownscaledDataURL(blob, max = 480) {
+  let img;
+  try {
+    img = await createImageBitmap(blob);
+  } catch (e) {
+    // Fallback via <img> + object URL
+    img = await new Promise((res, rej) => {
+      const url = URL.createObjectURL(blob);
+      const i = new Image();
+      i.onload = () => { URL.revokeObjectURL(url); res(i); };
+      i.onerror = () => { URL.revokeObjectURL(url); rej(e); };
+      i.src = url;
+    });
+  }
+  const w0 = img.width, h0 = img.height;
+  const scale = Math.min(1, max / Math.max(w0, h0));
+  const w = Math.max(1, Math.round(w0 * scale));
+  const h = Math.max(1, Math.round(h0 * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+  if (img.close) img.close();
+  return canvas.toDataURL("image/png");
+}
+
+/* ============================================================
+   Item / container model operations
+   ============================================================ */
+function getArray(containerKey) {
+  if (containerKey === "pool") return state.pool;
+  const tier = state.tiers.find((t) => t.id === containerKey);
+  return tier ? tier.items : null;
+}
+
+function findItemLocation(id) {
+  if (state.pool.includes(id)) return state.pool;
+  for (const t of state.tiers) if (t.items.includes(id)) return t.items;
+  return null;
+}
+
+function moveItem(id, containerKey, index) {
+  const src = findItemLocation(id);
+  if (src) src.splice(src.indexOf(id), 1);
+  const target = getArray(containerKey);
+  if (!target) return;
+  const i = Math.max(0, Math.min(index, target.length));
+  target.splice(i, 0, id);
+}
+
+function deleteItem(id) {
+  const src = findItemLocation(id);
+  if (src) src.splice(src.indexOf(id), 1);
+  delete state.items[id];
+}
+
+// Create item(s) from image files; append to a container (default pool).
+async function addImagesFromFiles(files, containerKey = "pool", startIndex = null) {
+  const images = [...files].filter((f) => f.type.startsWith("image/"));
+  if (!images.length) return;
+  const target = getArray(containerKey) || state.pool;
+  let idx = startIndex == null ? target.length : startIndex;
+  for (const file of images) {
+    try {
+      const dataURL = await toDownscaledDataURL(file);
+      const name = (file.name || "").replace(/\.[^.]+$/, "") || ("Item " + (++itemCounter));
+      const id = uid();
+      state.items[id] = { id, name, description: "", image: dataURL };
+      target.splice(idx++, 0, id);
+    } catch (e) {
+      toast("Couldn't read an image", "err");
+    }
+  }
+  render();
+  persist();
+  toast(images.length + " item" + (images.length > 1 ? "s" : "") + " added");
+}
+
+async function addImageFromBlob(blob, containerKey = "pool") {
+  try {
+    const dataURL = await toDownscaledDataURL(blob);
+    const id = uid();
+    state.items[id] = { id, name: "Item " + (++itemCounter), description: "", image: dataURL };
+    (getArray(containerKey) || state.pool).push(id);
+    render();
+    persist();
+    toast("Item added — click it to rename");
+  } catch (e) {
+    toast("Couldn't read pasted image", "err");
+  }
+}
+
+/* ============================================================
+   Rendering
+   ============================================================ */
+const boardEl = document.getElementById("board");
+const poolEl = document.getElementById("pool");
+
+function render() {
+  // Board
+  boardEl.innerHTML = "";
+  state.tiers.forEach((tier, idx) => {
+    const row = document.createElement("div");
+    row.className = "tier";
+
+    // Label (editable name) + color picker
+    const label = document.createElement("div");
+    label.className = "tier-label";
+    label.style.background = tier.color;
+    label.style.color = contrastColor(tier.color);
+    label.contentEditable = "true";
+    label.spellcheck = false;
+    label.textContent = tier.name;
+    label.title = "Click to rename";
+    label.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); label.blur(); }
+    });
+    label.addEventListener("blur", () => {
+      const v = label.textContent.trim();
+      tier.name = v || tier.name;
+      label.textContent = tier.name;
+      persist();
+    });
+
+    const color = document.createElement("input");
+    color.type = "color";
+    color.className = "color-input";
+    color.value = tier.color;
+    color.title = "Tier color";
+    color.addEventListener("input", () => {
+      tier.color = color.value;
+      label.style.background = tier.color;
+      label.style.color = contrastColor(tier.color);
+      persist();
+    });
+    // Keep the picker from triggering label edit/drag
+    color.addEventListener("mousedown", (e) => e.stopPropagation());
+    label.appendChild(color);
+
+    // Items dropzone
+    const zone = document.createElement("div");
+    zone.className = "dropzone";
+    zone.dataset.container = tier.id;
+    tier.items.forEach((id) => zone.appendChild(renderCard(id)));
+    wireDropzone(zone);
+
+    // Controls
+    const ctrls = document.createElement("div");
+    ctrls.className = "tier-controls";
+    const up = ctrlBtn("▲", "Move up", () => reorderTier(idx, -1));
+    const down = ctrlBtn("▼", "Move down", () => reorderTier(idx, 1));
+    const del = ctrlBtn("✕", "Delete tier", () => removeTier(tier.id));
+    del.classList.add("del");
+    up.disabled = idx === 0;
+    down.disabled = idx === state.tiers.length - 1;
+    ctrls.append(up, down, del);
+
+    row.append(label, zone, ctrls);
+    boardEl.appendChild(row);
+  });
+
+  // Pool
+  poolEl.innerHTML = "";
+  poolEl.dataset.container = "pool";
+  if (state.pool.length === 0) {
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.innerHTML =
+      'Paste an image with <kbd>⌘V</kbd> / <kbd>Ctrl V</kbd>, drag image files here, or use <b>+ Add items</b>.';
+    poolEl.appendChild(hint);
+  } else {
+    state.pool.forEach((id) => poolEl.appendChild(renderCard(id)));
+  }
+  wireDropzone(poolEl);
+}
+
+function ctrlBtn(label, title, onClick) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.title = title;
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+function renderCard(id) {
+  const item = state.items[id];
+  const card = document.createElement("div");
+  card.className = "card";
+  card.draggable = true;
+  card.dataset.id = id;
+  if (item.description) card.title = item.description;
+
+  const img = document.createElement("img");
+  img.src = item.image;
+  img.alt = item.name;
+
+  const cap = document.createElement("div");
+  cap.className = "cap";
+  cap.textContent = item.name;
+
+  const del = document.createElement("button");
+  del.className = "del";
+  del.textContent = "×";
+  del.title = "Delete item";
+  del.addEventListener("click", (e) => {
+    e.stopPropagation();
+    deleteItem(id);
+    render();
+    persist();
+  });
+
+  card.append(img, cap, del);
+
+  card.addEventListener("click", () => openEditor(id));
+  card.addEventListener("dragstart", (e) => {
+    draggedId = id;
+    e.dataTransfer.setData("application/x-tier-item", id);
+    e.dataTransfer.effectAllowed = "move";
+    card.classList.add("dragging");
+  });
+  card.addEventListener("dragend", clearDragState);
+
+  return card;
+}
+
+/* ============================================================
+   Drag & drop (items)
+   ============================================================ */
+let draggedId = null;
+const placeholder = document.createElement("div");
+placeholder.className = "card placeholder";
+
+function clearDragState() {
+  draggedId = null;
+  placeholder.remove();
+  document.querySelectorAll(".card.dragging").forEach((c) => c.classList.remove("dragging"));
+  document.querySelectorAll(".dropzone.drag-over").forEach((z) => z.classList.remove("drag-over"));
+}
+
+// Element (real card) the placeholder should be inserted before, or null to append.
+function insertBeforeTarget(zone, x, y) {
+  const cards = [...zone.querySelectorAll(".card:not(.dragging):not(.placeholder)")];
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    if (y >= r.top && y <= r.bottom && x < r.left + r.width / 2) return c;
+  }
+  return null;
+}
+
+function wireDropzone(zone) {
+  zone.addEventListener("dragover", (e) => {
+    const isItem = draggedId || e.dataTransfer.types.includes("application/x-tier-item");
+    const isFiles = e.dataTransfer.types.includes("Files");
+    if (!isItem && !isFiles) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = isFiles && !isItem ? "copy" : "move";
+    if (isItem) {
+      const before = insertBeforeTarget(zone, e.clientX, e.clientY);
+      if (before) zone.insertBefore(placeholder, before);
+      else zone.appendChild(placeholder);
+    } else {
+      zone.classList.add("drag-over");
+    }
+  });
+
+  zone.addEventListener("dragleave", (e) => {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove("drag-over");
+  });
+
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove("drag-over");
+    const containerKey = zone.dataset.container;
+
+    // External image files dropped into this zone
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      const index = placeholder.parentNode === zone ? indexOfPlaceholder(zone) : null;
+      placeholder.remove();
+      addImagesFromFiles(e.dataTransfer.files, containerKey, index);
+      return;
+    }
+
+    // Internal item move
+    const id = draggedId || e.dataTransfer.getData("application/x-tier-item");
+    if (!id) return;
+    const index = placeholder.parentNode === zone ? indexOfPlaceholder(zone) : getArray(containerKey).length;
+    placeholder.remove();
+    moveItem(id, containerKey, index);
+    render();
+    persist();
+  });
+}
+
+// Count real cards before the placeholder in a zone.
+function indexOfPlaceholder(zone) {
+  let i = 0;
+  for (const child of zone.children) {
+    if (child === placeholder) break;
+    if (child.classList.contains("card")) i++;
+  }
+  return i;
+}
+
+/* ============================================================
+   Tier management
+   ============================================================ */
+function reorderTier(idx, dir) {
+  const j = idx + dir;
+  if (j < 0 || j >= state.tiers.length) return;
+  const [t] = state.tiers.splice(idx, 1);
+  state.tiers.splice(j, 0, t);
+  render();
+  persist();
+}
+
+function removeTier(id) {
+  const tier = state.tiers.find((t) => t.id === id);
+  if (!tier) return;
+  if (tier.items.length && !confirm(`Delete tier "${tier.name}"? Its ${tier.items.length} item(s) move to Unranked.`))
+    return;
+  state.pool.push(...tier.items);
+  state.tiers = state.tiers.filter((t) => t.id !== id);
+  render();
+  persist();
+}
+
+const NEW_TIER_COLORS = ["#9fd3ff", "#c8a6ff", "#ff9ecb", "#a0e6c0", "#ffd28a", "#8fe0e6"];
+function addTier() {
+  const color = NEW_TIER_COLORS[state.tiers.length % NEW_TIER_COLORS.length];
+  state.tiers.push({ id: uid(), name: "New", color, items: [] });
+  render();
+  persist();
+  // Focus the new tier's label for immediate renaming
+  const last = boardEl.lastElementChild;
+  if (last) {
+    const label = last.querySelector(".tier-label");
+    label.focus();
+    document.getSelection().selectAllChildren(label);
+  }
+}
+
+/* ============================================================
+   Item editor modal
+   ============================================================ */
+const editorOverlay = document.getElementById("editorOverlay");
+const editPreview = document.getElementById("editPreview");
+const editName = document.getElementById("editName");
+const editDesc = document.getElementById("editDesc");
+let editingId = null;
+
+function openEditor(id) {
+  editingId = id;
+  const item = state.items[id];
+  editPreview.src = item.image;
+  editName.value = item.name;
+  editDesc.value = item.description || "";
+  editorOverlay.classList.add("show");
+  editName.focus();
+  editName.select();
+}
+
+function closeEditor() {
+  editorOverlay.classList.remove("show");
+  editingId = null;
+}
+
+document.getElementById("editSave").addEventListener("click", () => {
+  if (!editingId) return;
+  const item = state.items[editingId];
+  item.name = editName.value.trim() || item.name;
+  item.description = editDesc.value.trim();
+  closeEditor();
+  render();
+  persist();
+});
+document.getElementById("editCancel").addEventListener("click", closeEditor);
+document.getElementById("editDelete").addEventListener("click", () => {
+  if (!editingId) return;
+  deleteItem(editingId);
+  closeEditor();
+  render();
+  persist();
+});
+document.getElementById("editReplace").addEventListener("click", async () => {
+  if (!editingId) return;
+  const files = await pickFiles("image/*", false);
+  if (!files.length) return;
+  try {
+    const dataURL = await toDownscaledDataURL(files[0]);
+    state.items[editingId].image = dataURL;
+    editPreview.src = dataURL;
+    persist();
+  } catch (e) {
+    toast("Couldn't read image", "err");
+  }
+});
+editorOverlay.addEventListener("mousedown", (e) => { if (e.target === editorOverlay) closeEditor(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && editorOverlay.classList.contains("show")) closeEditor(); });
+
+/* ============================================================
+   Export PNG (native canvas)
+   ============================================================ */
+function drawCover(ctx, img, dx, dy, dw, dh) {
+  const ir = img.width / img.height;
+  const tr = dw / dh;
+  let sw, sh, sx, sy;
+  if (ir > tr) { sh = img.height; sw = sh * tr; sx = (img.width - sw) / 2; sy = 0; }
+  else { sw = img.width; sh = sw / tr; sx = 0; sy = (img.height - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
+function fitText(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t + "…";
+}
+
+async function exportPNG() {
+  const PAD = 20, LABEL_W = 96, CELL = 92, GAP = 8, CAP_H = 20, ROW_PAD = 8, ITEMS_W = 880;
+  const cols = Math.max(1, Math.floor((ITEMS_W + GAP) / (CELL + GAP)));
+  const canvasW = PAD + LABEL_W + GAP + ITEMS_W + PAD;
+
+  // Preload images
+  const ids = state.tiers.flatMap((t) => t.items);
+  const imgs = {};
+  await Promise.all(ids.map((id) => new Promise((res) => {
+    const im = new Image();
+    im.onload = () => { imgs[id] = im; res(); };
+    im.onerror = () => res();
+    im.src = state.items[id].image;
+  })));
+
+  // Measure total height
+  const tierH = (n) => {
+    const rows = Math.max(1, Math.ceil(n / cols));
+    return rows * (CELL + CAP_H) + (rows - 1) * GAP + 2 * ROW_PAD;
+  };
+  let totalH = PAD;
+  state.tiers.forEach((t) => { totalH += tierH(t.items.length) + GAP; });
+  totalH += PAD - GAP;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasW;
+  canvas.height = Math.max(totalH, PAD * 2 + CELL);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#15161b";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  let y = PAD;
+  for (const tier of state.tiers) {
+    const h = tierH(tier.items.length);
+
+    // Label
+    ctx.fillStyle = tier.color;
+    roundRect(ctx, PAD, y, LABEL_W, h, 8);
+    ctx.fill();
+    ctx.fillStyle = contrastColor(tier.color);
+    ctx.font = "800 22px -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(fitText(ctx, tier.name, LABEL_W - 10), PAD + LABEL_W / 2, y + h / 2);
+
+    // Items
+    const x0 = PAD + LABEL_W + GAP;
+    tier.items.forEach((id, i) => {
+      const col = i % cols, rowN = Math.floor(i / cols);
+      const x = x0 + col * (CELL + GAP);
+      const cy = y + ROW_PAD + rowN * (CELL + CAP_H + GAP);
+      ctx.fillStyle = "#262934";
+      roundRect(ctx, x, cy, CELL, CELL + CAP_H, 7);
+      ctx.fill();
+      ctx.save();
+      roundRect(ctx, x, cy, CELL, CELL, 7);
+      ctx.clip();
+      ctx.fillStyle = "#0d0e12";
+      ctx.fillRect(x, cy, CELL, CELL);
+      if (imgs[id]) drawCover(ctx, imgs[id], x, cy, CELL, CELL);
+      ctx.restore();
+      // Caption
+      ctx.fillStyle = "#e9eaed";
+      ctx.font = "500 11px -apple-system, Segoe UI, Roboto, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(fitText(ctx, state.items[id].name, CELL - 8), x + CELL / 2, cy + CELL + CAP_H / 2);
+    });
+
+    y += h + GAP;
+  }
+
+  canvas.toBlob((blob) => {
+    if (blob) { download(blob, "tier-list.png"); toast("PNG exported"); }
+  }, "image/png");
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* ============================================================
+   Export / import JSON
+   ============================================================ */
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  download(blob, "tier-list.json");
+  toast("JSON exported");
+}
+
+async function importJSON() {
+  const files = await pickFiles("application/json,.json", false);
+  if (!files.length) return;
+  try {
+    const text = await files[0].text();
+    const data = JSON.parse(text);
+    if (!data || !Array.isArray(data.tiers) || typeof data.items !== "object" || !Array.isArray(data.pool))
+      throw new Error("bad shape");
+    // Re-id nothing; trust the file but ensure required fields exist.
+    data.tiers.forEach((t) => {
+      t.id = t.id || uid();
+      t.items = Array.isArray(t.items) ? t.items : [];
+      t.color = t.color || "#888888";
+      t.name = t.name == null ? "?" : String(t.name);
+    });
+    state = { version: 1, tiers: data.tiers, pool: data.pool, items: data.items };
+    render();
+    persist();
+    toast("Tier list imported");
+  } catch (e) {
+    toast("Import failed — not a valid tier-list file", "err");
+  }
+}
+
+/* ============================================================
+   Global handlers
+   ============================================================ */
+// Paste image from clipboard
+document.addEventListener("paste", (e) => {
+  if (editorOverlay.classList.contains("show")) return; // let textfields paste normally
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const it of items) {
+    if (it.type && it.type.startsWith("image/")) {
+      const blob = it.getAsFile();
+      if (blob) { e.preventDefault(); addImageFromBlob(blob, "pool"); return; }
+    }
+  }
+});
+
+// Page-level file drop (areas outside any dropzone) + prevent browser opening the file
+window.addEventListener("dragover", (e) => {
+  if (e.dataTransfer && e.dataTransfer.types.includes("Files")) {
+    e.preventDefault();
+    document.body.classList.add("file-dragging");
+  }
+});
+window.addEventListener("dragleave", (e) => {
+  if (!e.relatedTarget) document.body.classList.remove("file-dragging");
+});
+window.addEventListener("drop", (e) => {
+  document.body.classList.remove("file-dragging");
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    e.preventDefault(); // a zone would have stopPropagation'd already; this catches page drops
+    addImagesFromFiles(e.dataTransfer.files, "pool");
+  }
+});
+
+// Toolbar
+document.getElementById("addItemBtn").addEventListener("click", async () => {
+  const files = await pickFiles("image/*", true);
+  if (files.length) addImagesFromFiles(files, "pool");
+});
+document.getElementById("addTierBtn").addEventListener("click", addTier);
+document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
+document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
+document.getElementById("importJsonBtn").addEventListener("click", importJSON);
+document.getElementById("resetBtn").addEventListener("click", () => {
+  if (!confirm("Reset the board to default tiers and remove all items?")) return;
+  state = defaultState();
+  itemCounter = 0;
+  render();
+  persist();
+  toast("Board reset");
+});
+
+/* ============================================================
+   Boot
+   ============================================================ */
+(async function init() {
+  db = await openDB();
+  const saved = await loadState();
+  if (saved && Array.isArray(saved.tiers) && saved.items) {
+    state = saved;
+    // Restore the item counter so new default names don't collide
+    itemCounter = Object.keys(saved.items).length;
+  } else {
+    state = defaultState();
+  }
+  render();
+  if (!db) toast("Storage unavailable — changes won't be saved", "err");
+})();
+</script>
+</body>
+</html>
