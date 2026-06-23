@@ -407,6 +407,29 @@
   .menu-empty-art { font-size: 54px; line-height: 1; }
   .menu-empty h2 { color: var(--text); margin: 12px 0 6px; }
   .menu-empty p { margin: 0 0 18px; }
+
+  /* ---------- Auth + sharing ---------- */
+  .auth-area { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .user-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .user-chip img { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); object-fit: cover; }
+  .user-chip b { color: var(--text); font-weight: 600; }
+
+  .vis-badge {
+    flex: 0 0 auto;
+    font-size: 11px; font-weight: 700;
+    padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .vis-badge.pub { color: #8fe6b0; border-color: #2f6b48; background: rgba(60,180,120,.12); }
+
+  .ro-banner {
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    background: rgba(110,168,254,.10);
+    border-bottom: 1px solid var(--line);
+    color: var(--text); font-size: 13px;
+    padding: 9px 14px;
+  }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -414,6 +437,7 @@
   <div id="menuView">
     <header class="menu-header">
       <h1><span class="logo">🏆</span> Tier Lists</h1>
+      <div id="authArea" class="auth-area"></div>
       <button class="btn primary" id="newListBtn">+ New list</button>
       <button class="btn" id="importListBtn">Import list</button>
     </header>
@@ -433,12 +457,20 @@
     <header>
       <button class="btn ghost back-btn" id="backBtn" title="All lists">← Lists</button>
       <input id="boardName" class="board-name" maxlength="80" placeholder="Untitled list" aria-label="List name" />
+      <span class="vis-badge" id="visibilityBadge" hidden></span>
       <span class="header-spacer"></span>
+      <button class="btn" id="visibilityBtn" hidden>Make public</button>
+      <button class="btn" id="shareBtn" hidden>Share</button>
       <button class="btn primary" id="addItemBtn">+ Add items</button>
       <button class="btn" id="exportPngBtn">Export PNG</button>
       <button class="btn" id="exportJsonBtn">Export JSON</button>
       <button class="btn danger ghost" id="resetBtn">Reset</button>
     </header>
+
+    <div class="ro-banner" id="roBanner" hidden>
+      <span>👁 You're viewing a public list — read-only.</span>
+      <button class="btn small" id="roDup">Duplicate to my lists</button>
+    </div>
 
     <main>
       <div class="board" id="board"></div>
@@ -477,6 +509,7 @@
 
   <div id="toasts"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
 
@@ -512,6 +545,71 @@ function newBoard(name) {
   const t = nowMs();
   return { id: uid(), name: name || "Untitled list", version: 1,
     tiers: defaultTiers(), pool: [], items: {}, createdAt: t, updatedAt: t };
+}
+
+/* ============================================================
+   Supabase client + auth
+   ============================================================ */
+const SUPABASE_URL = "https://hizumyjjthjxahykrhpo.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_m-JUQuQKtCIUSvoGHjYQeQ_z5hhv3ji";
+let sb = null;
+try { if (window.supabase) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+catch (e) { console.warn("Supabase init failed:", e); }
+
+let currentUser = null;   // { id, email, name, avatar } when signed in
+let canEdit = true;       // can the viewer edit the open board?
+const byId = (id) => document.getElementById(id);
+
+async function signInWithGoogle() {
+  if (!sb) return toast("Cloud sign-in unavailable", "err");
+  await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: location.origin + location.pathname },
+  });
+}
+async function signOutUser() {
+  if (!sb) return;
+  await sb.auth.signOut();
+  location.hash = "#/";
+  location.reload();
+}
+function setUserFromSession(session) {
+  if (session && session.user) {
+    const u = session.user, m = u.user_metadata || {};
+    currentUser = { id: u.id, email: u.email,
+      name: m.name || m.full_name || null, avatar: m.avatar_url || m.picture || null };
+  } else {
+    currentUser = null;
+  }
+}
+function renderAuth() {
+  const el = byId("authArea");
+  el.innerHTML = "";
+  if (currentUser) {
+    const chip = document.createElement("div");
+    chip.className = "user-chip";
+    if (currentUser.avatar) {
+      const img = document.createElement("img");
+      img.src = currentUser.avatar; img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      chip.appendChild(img);
+    }
+    const nm = document.createElement("span");
+    nm.append("Signed in as ");
+    const b = document.createElement("b");
+    b.textContent = currentUser.name || currentUser.email || "you";
+    nm.appendChild(b);
+    chip.appendChild(nm);
+    const out = document.createElement("button");
+    out.className = "btn ghost"; out.textContent = "Sign out";
+    out.addEventListener("click", signOutUser);
+    el.append(chip, out);
+  } else {
+    const inb = document.createElement("button");
+    inb.className = "btn"; inb.textContent = "Sign in with Google";
+    inb.addEventListener("click", signInWithGoogle);
+    el.appendChild(inb);
+  }
 }
 
 /* ============================================================
@@ -577,33 +675,12 @@ function dbDelete(store, key) {
   });
 }
 
-const saveBoard = (b) => dbPut("boards", b, b.id);
-const removeBoardDB = (id) => dbDelete("boards", id);
+const lsPutBoard = (b) => dbPut("boards", b, b.id);
+const lsDeleteBoard = (id) => dbDelete("boards", id);
 const setOrderDB = () => dbPut("app", order.slice(), "order");
 const setLastOpened = (id) => dbPut("app", id, "lastOpened");
 
-// Debounced save of the currently-open board. Keeps the in-memory cache fresh
-// immediately so the menu preview is up to date the moment you go back.
-function persist() {
-  if (!state) return;
-  state.updatedAt = nowMs();
-  const i = boardsCache.findIndex((b) => b.id === state.id);
-  if (i >= 0) boardsCache[i] = state; else boardsCache.push(state);
-  if (!order.includes(state.id)) { order.push(state.id); setOrderDB(); }
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveBoard(state); }, 250);
-}
-
-async function loadBoards() {
-  boardsCache = await dbGetAll("boards");
-  order = (await dbGet("app", "order")) || [];
-  // Reconcile order with what actually exists.
-  const ids = new Set(boardsCache.map((b) => b.id));
-  order = order.filter((id) => ids.has(id));
-  boardsCache.forEach((b) => { if (!order.includes(b.id)) order.push(b.id); });
-}
-
-// One-time migration of the old single board (v1 `state.current`) into the new store.
+// One-time migration of the old single board (v1 `state.current`) into the local store.
 async function migrateIfNeeded() {
   if (boardsCache.length > 0) return;
   const legacy = await dbGet("state", "current");
@@ -614,7 +691,7 @@ async function migrateIfNeeded() {
       items: legacy.items, createdAt: t, updatedAt: t };
     boardsCache = [board];
     order = [board.id];
-    await saveBoard(board);
+    await lsPutBoard(board);
     await setOrderDB();
     await setLastOpened(board.id);
   }
@@ -623,6 +700,121 @@ async function migrateIfNeeded() {
 function orderedBoards() {
   const map = new Map(boardsCache.map((b) => [b.id, b]));
   return order.map((id) => map.get(id)).filter(Boolean);
+}
+
+/* ============================================================
+   Backends: local (IndexedDB) and cloud (Supabase)
+   ============================================================ */
+function rowToBoard(row) {
+  const d = row.data || {};
+  return {
+    id: row.id, owner: row.owner, name: row.name,
+    visibility: row.visibility || "private", version: 1,
+    tiers: Array.isArray(d.tiers) ? d.tiers : [],
+    pool: Array.isArray(d.pool) ? d.pool : [],
+    items: d.items && typeof d.items === "object" ? d.items : {},
+    createdAt: Date.parse(row.created_at) || nowMs(),
+    updatedAt: Date.parse(row.updated_at) || nowMs(),
+    position: row.position || 0,
+  };
+}
+const boardData = (b) => ({ tiers: b.tiers, pool: b.pool, items: b.items });
+
+// Fetch any list by id that the viewer is allowed to read (own or public). RLS enforces access.
+async function cloudFetchOne(id) {
+  if (!sb) return null;
+  const { data, error } = await sb.from("tier_lists").select("*").eq("id", id).maybeSingle();
+  if (error || !data) return null;
+  return { board: rowToBoard(data), canEdit: !!currentUser && data.owner === currentUser.id };
+}
+
+// Re-host any base64 (data:) images on a board into Storage, rewriting item.image to public URLs.
+async function rehostImagesToStorage(board) {
+  if (!sb || !currentUser) return;
+  for (const [itemId, it] of Object.entries(board.items || {})) {
+    if (typeof it.image === "string" && it.image.startsWith("data:")) {
+      try {
+        const blob = await (await fetch(it.image)).blob();
+        const path = `${currentUser.id}/${board.id}/${itemId}.png`;
+        const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
+        if (!up.error) it.image = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+      } catch (e) { /* keep data URL as fallback */ }
+    }
+  }
+}
+
+const localBackend = {
+  mode: "local",
+  async load() {
+    boardsCache = await dbGetAll("boards");
+    order = (await dbGet("app", "order")) || [];
+    const ids = new Set(boardsCache.map((b) => b.id));
+    order = order.filter((id) => ids.has(id));
+    boardsCache.forEach((b) => { if (!order.includes(b.id)) order.push(b.id); });
+    await migrateIfNeeded();
+  },
+  async save(b) { b.updatedAt = nowMs(); await lsPutBoard(b); await setOrderDB(); },
+  async remove(id) { await lsDeleteBoard(id); await setOrderDB(); },
+  async fetchOne(id) {
+    const local = boardsCache.find((b) => b.id === id) || (await dbGet("boards", id));
+    if (local) return { board: local, canEdit: true };
+    return cloudFetchOne(id); // a shared public cloud list opened while logged out
+  },
+  async processImage(file) { return (await toDownscaledBlob(file)).dataURL; },
+};
+
+const cloudBackend = {
+  mode: "cloud",
+  async load() {
+    boardsCache = []; order = [];
+    if (!sb || !currentUser) return;
+    const { data, error } = await sb.from("tier_lists")
+      .select("*").eq("owner", currentUser.id)
+      .order("position", { ascending: true }).order("created_at", { ascending: true });
+    if (error) { toast("Couldn't load your lists", "err"); return; }
+    boardsCache = (data || []).map(rowToBoard);
+    order = boardsCache.map((b) => b.id);
+  },
+  async save(b) {
+    if (!sb || !currentUser) return;
+    const pos = order.indexOf(b.id);
+    const { error } = await sb.from("tier_lists").upsert({
+      id: b.id, owner: currentUser.id, name: b.name,
+      visibility: b.visibility || "private", data: boardData(b),
+      position: pos < 0 ? 0 : pos,
+    });
+    if (error) toast("Cloud save failed", "err");
+  },
+  async remove(id) {
+    if (!sb || !currentUser) return;
+    const { error } = await sb.from("tier_lists").delete().eq("id", id);
+    if (error) toast("Cloud delete failed", "err");
+  },
+  async fetchOne(id) {
+    const owned = boardsCache.find((b) => b.id === id);
+    if (owned) return { board: owned, canEdit: true };
+    return cloudFetchOne(id);
+  },
+  async processImage(file, itemId) {
+    const { blob } = await toDownscaledBlob(file);
+    const path = `${currentUser.id}/${state.id}/${itemId}.png`;
+    const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
+    if (up.error) throw up.error;
+    return sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+  },
+};
+
+let backend = localBackend;
+
+// Debounced save of the currently-open board. Keeps the in-memory cache fresh immediately.
+function persist() {
+  if (!state || !canEdit) return;
+  state.updatedAt = nowMs();
+  const i = boardsCache.findIndex((b) => b.id === state.id);
+  if (i >= 0) boardsCache[i] = state; else boardsCache.push(state);
+  if (!order.includes(state.id)) order.push(state.id);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { backend.save(state); }, 300);
 }
 
 /* ============================================================
@@ -637,11 +829,19 @@ const boardNameInput = document.getElementById("boardName");
 function goMenu() { location.hash = "#/"; }
 function goBoard(id) { location.hash = "#/b/" + id; }
 
-function route() {
+async function route() {
   const m = location.hash.match(/^#\/b\/(.+)$/);
   if (m) {
-    const board = boardsCache.find((b) => b.id === decodeURIComponent(m[1]));
-    if (board) { openBoard(board); return; }
+    const id = decodeURIComponent(m[1]);
+    const cached = boardsCache.find((b) => b.id === id);
+    if (cached) {
+      const editable = backend.mode === "local" || (!!currentUser && cached.owner === currentUser.id);
+      openBoard(cached, editable);
+      return;
+    }
+    const res = await backend.fetchOne(id);
+    if (res && res.board) { openBoard(res.board, res.canEdit); return; }
+    toast("List not found or private", "err");
   }
   showMenu();
 }
@@ -654,25 +854,27 @@ function showMenu() {
   renderMenu();
 }
 
-function openBoard(board) {
+function openBoard(board, editable) {
   currentView = "board";
   state = board;
+  canEdit = editable !== false;
   itemCounter = Object.keys(board.items).length;
-  setLastOpened(board.id);
+  if (backend.mode === "local" && canEdit) setLastOpened(board.id);
   boardNameInput.value = board.name;
   menuView.hidden = true;
   boardView.hidden = false;
+  applyEditableUI();
   render();
 }
 
 async function createBoard() {
   const b = newBoard();
+  if (backend.mode === "cloud" && currentUser) { b.owner = currentUser.id; b.visibility = "private"; }
   boardsCache.push(b);
   order.push(b.id);
-  await saveBoard(b);
-  await setOrderDB();
+  await backend.save(b);
   goBoard(b.id);
-  setTimeout(() => { boardNameInput.focus(); boardNameInput.select(); }, 40);
+  setTimeout(() => { if (canEdit) { boardNameInput.focus(); boardNameInput.select(); } }, 60);
 }
 
 async function deleteBoard(id) {
@@ -681,8 +883,7 @@ async function deleteBoard(id) {
   if (!confirm(`Delete "${b.name}"? This can't be undone.`)) return;
   boardsCache = boardsCache.filter((x) => x.id !== id);
   order = order.filter((x) => x !== id);
-  await removeBoardDB(id);
-  await setOrderDB();
+  await backend.remove(id);
   toast("List deleted");
   if (state && state.id === id) goMenu(); else renderMenu();
 }
@@ -690,15 +891,14 @@ async function deleteBoard(id) {
 async function duplicateBoard(id) {
   const b = boardsCache.find((x) => x.id === id);
   if (!b) return;
-  const t = nowMs();
   const copy = JSON.parse(JSON.stringify(b));
   copy.id = uid();
   copy.name = b.name + " (copy)";
-  copy.createdAt = t; copy.updatedAt = t;
+  copy.createdAt = nowMs(); copy.updatedAt = nowMs();
+  if (backend.mode === "cloud" && currentUser) { copy.owner = currentUser.id; copy.visibility = "private"; }
   boardsCache.push(copy);
   order.push(copy.id);
-  await saveBoard(copy);
-  await setOrderDB();
+  await backend.save(copy);
   renderMenu();
   toast("List duplicated");
 }
@@ -710,8 +910,99 @@ function renameBoard(id, name) {
   if (!trimmed) return;
   b.name = trimmed;
   b.updatedAt = nowMs();
-  saveBoard(b);
+  backend.save(b);
   if (state && state.id === id) boardNameInput.value = b.name;
+}
+
+/* ---- read-only vs editable UI + sharing (cloud, owner only) ---- */
+function applyEditableUI() {
+  const cloudOwner = canEdit && backend.mode === "cloud" && !!(state && state.owner);
+  byId("addItemBtn").hidden = !canEdit;
+  byId("addTierBtn").hidden = !canEdit;
+  byId("resetBtn").hidden = !canEdit;
+  boardNameInput.readOnly = !canEdit;
+  byId("shareBtn").hidden = !cloudOwner;
+  const visBtn = byId("visibilityBtn");
+  visBtn.hidden = !cloudOwner;
+  if (cloudOwner) visBtn.textContent = state.visibility === "public" ? "Make private" : "Make public";
+  const badge = byId("visibilityBadge");
+  if (backend.mode === "cloud" && state && state.owner) {
+    badge.hidden = false;
+    badge.textContent = state.visibility === "public" ? "● Public" : "● Private";
+    badge.className = "vis-badge " + (state.visibility === "public" ? "pub" : "priv");
+  } else {
+    badge.hidden = true;
+  }
+  byId("roBanner").hidden = canEdit;
+  byId("roDup").textContent = currentUser ? "Duplicate to my lists" : "Sign in to save a copy";
+}
+
+function shareLink() { return location.origin + location.pathname + "#/b/" + state.id; }
+
+async function setVisibility(v) {
+  if (!state || !canEdit || backend.mode !== "cloud") return;
+  state.visibility = v;
+  const i = boardsCache.findIndex((b) => b.id === state.id);
+  if (i >= 0) boardsCache[i] = state;
+  await backend.save(state);
+  applyEditableUI();
+  toast(v === "public" ? "Anyone with the link can view" : "List is now private");
+}
+
+async function shareCurrent() {
+  if (!state) return;
+  if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
+  if (state.visibility !== "public") {
+    if (!confirm("Make this list public so anyone with the link can view it?")) return;
+    await setVisibility("public");
+  }
+  const link = shareLink();
+  try { await navigator.clipboard.writeText(link); toast("Share link copied"); }
+  catch (e) { prompt("Copy this share link:", link); }
+}
+
+async function duplicateOpenToMyLists() {
+  if (!currentUser) return signInWithGoogle();
+  const copy = JSON.parse(JSON.stringify(state));
+  copy.id = uid(); copy.owner = currentUser.id; copy.visibility = "private";
+  copy.name = state.name + " (copy)";
+  copy.createdAt = nowMs(); copy.updatedAt = nowMs();
+  boardsCache.push(copy); order.push(copy.id);
+  await cloudBackend.save(copy);
+  toast("Saved to your lists");
+  goBoard(copy.id);
+}
+
+/* ---- one-time local → cloud sync on first sign-in ---- */
+async function maybeOfferSync() {
+  if (!currentUser || !sb || !db) return;
+  const flagKey = "synced_" + currentUser.id;
+  if ((await dbGet("app", flagKey)) === true) return;
+  const localBoards = await dbGetAll("boards");
+  if (!localBoards.length) { await dbPut("app", true, flagKey); return; }
+  const n = localBoards.length;
+  if (!confirm(`Upload your ${n} local tier list${n > 1 ? "s" : ""} to your account?`)) {
+    await dbPut("app", true, flagKey);
+    return;
+  }
+  toast("Uploading local lists…");
+  for (const lb of localBoards) {
+    try {
+      const board = JSON.parse(JSON.stringify(lb));
+      await rehostImagesToStorage(board);
+      const pos = order.length;
+      await sb.from("tier_lists").insert({
+        id: board.id, owner: currentUser.id, name: board.name || "Untitled list",
+        visibility: "private",
+        data: { tiers: board.tiers || [], pool: board.pool || [], items: board.items || {} },
+        position: pos,
+      });
+    } catch (e) { console.warn("sync failed for a board", e); }
+  }
+  await dbPut("app", true, flagKey);
+  await cloudBackend.load();
+  renderMenu();
+  toast("Local lists uploaded to your account");
 }
 
 function timeAgo(ts) {
@@ -796,7 +1087,8 @@ function renderListCard(b) {
   sub.textContent =
     itemCount + " item" + (itemCount === 1 ? "" : "s") + " · " +
     b.tiers.length + " tier" + (b.tiers.length === 1 ? "" : "s") + " · " +
-    timeAgo(b.updatedAt);
+    timeAgo(b.updatedAt) +
+    (b.visibility === "public" ? " · 🌐 Public" : "");
   meta.append(name, sub);
 
   // Hover actions
@@ -860,8 +1152,9 @@ function pickFiles(accept, multiple) {
   });
 }
 
-// Downscale an image blob/file to a max dimension and return a data URL.
-async function toDownscaledDataURL(blob, max = 480) {
+// Downscale an image blob/file to a max dimension; return both a Blob (for upload)
+// and a data URL (for local storage / instant preview).
+async function toDownscaledBlob(blob, max = 480) {
   let img;
   try {
     img = await createImageBitmap(blob);
@@ -883,7 +1176,14 @@ async function toDownscaledDataURL(blob, max = 480) {
   canvas.width = w; canvas.height = h;
   canvas.getContext("2d").drawImage(img, 0, 0, w, h);
   if (img.close) img.close();
-  return canvas.toDataURL("image/png");
+  const dataURL = canvas.toDataURL("image/png");
+  const out = await new Promise((res) => canvas.toBlob(res, "image/png"));
+  return { blob: out, dataURL };
+}
+
+// Backwards-compatible helper.
+async function toDownscaledDataURL(blob, max = 480) {
+  return (await toDownscaledBlob(blob, max)).dataURL;
 }
 
 /* ============================================================
@@ -924,13 +1224,13 @@ async function addImagesFromFiles(files, containerKey = "pool", startIndex = nul
   let idx = startIndex == null ? target.length : startIndex;
   for (const file of images) {
     try {
-      const dataURL = await toDownscaledDataURL(file);
-      const name = (file.name || "").replace(/\.[^.]+$/, "") || ("Item " + (++itemCounter));
       const id = uid();
-      state.items[id] = { id, name, description: "", image: dataURL };
+      const image = await backend.processImage(file, id);
+      const name = (file.name || "").replace(/\.[^.]+$/, "") || ("Item " + (++itemCounter));
+      state.items[id] = { id, name, description: "", image };
       target.splice(idx++, 0, id);
     } catch (e) {
-      toast("Couldn't read an image", "err");
+      toast("Couldn't add an image", "err");
     }
   }
   render();
@@ -940,15 +1240,15 @@ async function addImagesFromFiles(files, containerKey = "pool", startIndex = nul
 
 async function addImageFromBlob(blob, containerKey = "pool") {
   try {
-    const dataURL = await toDownscaledDataURL(blob);
     const id = uid();
-    state.items[id] = { id, name: "Item " + (++itemCounter), description: "", image: dataURL };
+    const image = await backend.processImage(blob, id);
+    state.items[id] = { id, name: "Item " + (++itemCounter), description: "", image };
     (getArray(containerKey) || state.pool).push(id);
     render();
     persist();
     toast("Item added — click it to rename");
   } catch (e) {
-    toast("Couldn't read pasted image", "err");
+    toast("Couldn't add pasted image", "err");
   }
 }
 
@@ -965,39 +1265,41 @@ function render() {
     const row = document.createElement("div");
     row.className = "tier";
 
-    // Label (editable name) + color picker
+    // Label (editable name + color picker when editable)
     const label = document.createElement("div");
     label.className = "tier-label";
     label.style.background = tier.color;
     label.style.color = contrastColor(tier.color);
-    label.contentEditable = "true";
-    label.spellcheck = false;
     label.textContent = tier.name;
-    label.title = "Click to rename";
-    label.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); label.blur(); }
-    });
-    label.addEventListener("blur", () => {
-      const v = label.textContent.trim();
-      tier.name = v || tier.name;
-      label.textContent = tier.name;
-      persist();
-    });
+    if (canEdit) {
+      label.contentEditable = "true";
+      label.spellcheck = false;
+      label.title = "Click to rename";
+      label.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); label.blur(); }
+      });
+      label.addEventListener("blur", () => {
+        const v = label.textContent.trim();
+        tier.name = v || tier.name;
+        label.textContent = tier.name;
+        persist();
+      });
 
-    const color = document.createElement("input");
-    color.type = "color";
-    color.className = "color-input";
-    color.value = tier.color;
-    color.title = "Tier color";
-    color.addEventListener("input", () => {
-      tier.color = color.value;
-      label.style.background = tier.color;
-      label.style.color = contrastColor(tier.color);
-      persist();
-    });
-    // Keep the picker from triggering label edit/drag
-    color.addEventListener("mousedown", (e) => e.stopPropagation());
-    label.appendChild(color);
+      const color = document.createElement("input");
+      color.type = "color";
+      color.className = "color-input";
+      color.value = tier.color;
+      color.title = "Tier color";
+      color.addEventListener("input", () => {
+        tier.color = color.value;
+        label.style.background = tier.color;
+        label.style.color = contrastColor(tier.color);
+        persist();
+      });
+      // Keep the picker from triggering label edit/drag
+      color.addEventListener("mousedown", (e) => e.stopPropagation());
+      label.appendChild(color);
+    }
 
     // Items dropzone
     const zone = document.createElement("div");
@@ -1006,18 +1308,22 @@ function render() {
     tier.items.forEach((id) => zone.appendChild(renderCard(id)));
     wireDropzone(zone);
 
-    // Controls
-    const ctrls = document.createElement("div");
-    ctrls.className = "tier-controls";
-    const up = ctrlBtn("▲", "Move up", () => reorderTier(idx, -1));
-    const down = ctrlBtn("▼", "Move down", () => reorderTier(idx, 1));
-    const del = ctrlBtn("✕", "Delete tier", () => removeTier(tier.id));
-    del.classList.add("del");
-    up.disabled = idx === 0;
-    down.disabled = idx === state.tiers.length - 1;
-    ctrls.append(up, down, del);
+    row.append(label, zone);
 
-    row.append(label, zone, ctrls);
+    // Controls (editable only)
+    if (canEdit) {
+      const ctrls = document.createElement("div");
+      ctrls.className = "tier-controls";
+      const up = ctrlBtn("▲", "Move up", () => reorderTier(idx, -1));
+      const down = ctrlBtn("▼", "Move down", () => reorderTier(idx, 1));
+      const del = ctrlBtn("✕", "Delete tier", () => removeTier(tier.id));
+      del.classList.add("del");
+      up.disabled = idx === 0;
+      down.disabled = idx === state.tiers.length - 1;
+      ctrls.append(up, down, del);
+      row.append(ctrls);
+    }
+
     boardEl.appendChild(row);
   });
 
@@ -1025,11 +1331,13 @@ function render() {
   poolEl.innerHTML = "";
   poolEl.dataset.container = "pool";
   if (state.pool.length === 0) {
-    const hint = document.createElement("div");
-    hint.className = "hint";
-    hint.innerHTML =
-      'Paste an image with <kbd>⌘V</kbd> / <kbd>Ctrl V</kbd>, drag image files here, or use <b>+ Add items</b>.';
-    poolEl.appendChild(hint);
+    if (canEdit) {
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.innerHTML =
+        'Paste an image with <kbd>⌘V</kbd> / <kbd>Ctrl V</kbd>, drag image files here, or use <b>+ Add items</b>.';
+      poolEl.appendChild(hint);
+    }
   } else {
     state.pool.forEach((id) => poolEl.appendChild(renderCard(id)));
   }
@@ -1048,7 +1356,6 @@ function renderCard(id) {
   const item = state.items[id];
   const card = document.createElement("div");
   card.className = "card";
-  card.draggable = true;
   card.dataset.id = id;
   if (item.description) card.title = item.description;
 
@@ -1060,6 +1367,15 @@ function renderCard(id) {
   cap.className = "cap";
   cap.textContent = item.name;
 
+  card.append(img, cap);
+
+  if (!canEdit) {
+    card.style.cursor = "default";
+    return card;
+  }
+
+  card.draggable = true;
+
   const del = document.createElement("button");
   del.className = "del";
   del.textContent = "×";
@@ -1070,8 +1386,7 @@ function renderCard(id) {
     render();
     persist();
   });
-
-  card.append(img, cap, del);
+  card.appendChild(del);
 
   card.addEventListener("click", () => openEditor(id));
   card.addEventListener("dragstart", (e) => {
@@ -1110,6 +1425,7 @@ function insertBeforeTarget(zone, x, y) {
 }
 
 function wireDropzone(zone) {
+  if (!canEdit) return; // read-only: no drops
   zone.addEventListener("dragover", (e) => {
     const isItem = draggedId || e.dataTransfer.types.includes("application/x-tier-item");
     const isFiles = e.dataTransfer.types.includes("Files");
@@ -1258,9 +1574,9 @@ document.getElementById("editReplace").addEventListener("click", async () => {
   const files = await pickFiles("image/*", false);
   if (!files.length) return;
   try {
-    const dataURL = await toDownscaledDataURL(files[0]);
-    state.items[editingId].image = dataURL;
-    editPreview.src = dataURL;
+    const image = await backend.processImage(files[0], editingId);
+    state.items[editingId].image = image;
+    editPreview.src = image;
     persist();
   } catch (e) {
     toast("Couldn't read image", "err");
@@ -1298,6 +1614,7 @@ async function exportPNG() {
   const imgs = {};
   await Promise.all(ids.map((id) => new Promise((res) => {
     const im = new Image();
+    im.crossOrigin = "anonymous"; // allow drawing Storage-hosted images without tainting the canvas
     im.onload = () => { imgs[id] = im; res(); };
     im.onerror = () => res();
     im.src = state.items[id].image;
@@ -1414,10 +1731,14 @@ async function importList() {
       version: 1, tiers: data.tiers, pool: data.pool, items: data.items,
       createdAt: t, updatedAt: t,
     };
+    if (backend.mode === "cloud" && currentUser) {
+      board.owner = currentUser.id;
+      board.visibility = "private";
+      await rehostImagesToStorage(board); // move any base64 images into Storage
+    }
     boardsCache.push(board);
     order.push(board.id);
-    await saveBoard(board);
-    await setOrderDB();
+    await backend.save(board);
     toast("List imported");
     goBoard(board.id);
   } catch (e) {
@@ -1428,9 +1749,9 @@ async function importList() {
 /* ============================================================
    Global handlers
    ============================================================ */
-// Paste image from clipboard (only while a board is open)
+// Paste image from clipboard (only while editing a board)
 document.addEventListener("paste", (e) => {
-  if (currentView !== "board") return;
+  if (currentView !== "board" || !canEdit) return;
   if (editorOverlay.classList.contains("show")) return; // let textfields paste normally
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
@@ -1446,7 +1767,7 @@ document.addEventListener("paste", (e) => {
 window.addEventListener("dragover", (e) => {
   if (e.dataTransfer && e.dataTransfer.types.includes("Files")) {
     e.preventDefault();
-    if (currentView === "board") document.body.classList.add("file-dragging");
+    if (currentView === "board" && canEdit) document.body.classList.add("file-dragging");
   }
 });
 window.addEventListener("dragleave", (e) => {
@@ -1456,7 +1777,7 @@ window.addEventListener("drop", (e) => {
   document.body.classList.remove("file-dragging");
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
     e.preventDefault(); // a zone would have stopPropagation'd already; this catches page drops
-    if (currentView === "board") addImagesFromFiles(e.dataTransfer.files, "pool");
+    if (currentView === "board" && canEdit) addImagesFromFiles(e.dataTransfer.files, "pool");
   }
 });
 
@@ -1470,7 +1791,7 @@ document.getElementById("addTierBtn").addEventListener("click", addTier);
 document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
 document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
 document.getElementById("resetBtn").addEventListener("click", () => {
-  if (!state) return;
+  if (!state || !canEdit) return;
   if (!confirm("Reset this board to default tiers and remove all items?")) return;
   state.tiers = defaultTiers();
   state.pool = [];
@@ -1480,10 +1801,16 @@ document.getElementById("resetBtn").addEventListener("click", () => {
   persist();
   toast("Board reset");
 });
+document.getElementById("shareBtn").addEventListener("click", shareCurrent);
+document.getElementById("visibilityBtn").addEventListener("click", () => {
+  if (!state) return;
+  setVisibility(state.visibility === "public" ? "private" : "public");
+});
+document.getElementById("roDup").addEventListener("click", duplicateOpenToMyLists);
 
 // Editable board name
 boardNameInput.addEventListener("change", () => {
-  if (!state) return;
+  if (!state || !canEdit) return;
   state.name = boardNameInput.value.trim() || "Untitled list";
   boardNameInput.value = state.name;
   persist();
@@ -1500,11 +1827,27 @@ document.getElementById("importListBtn").addEventListener("click", importList);
    ============================================================ */
 (async function init() {
   db = await openDB();
-  await loadBoards();
-  await migrateIfNeeded();
+
+  // Resolve auth session (consumes any OAuth redirect hash via supabase-js).
+  if (sb) {
+    try {
+      const { data } = await sb.auth.getSession();
+      setUserFromSession(data.session);
+    } catch (e) { console.warn("getSession failed", e); }
+    sb.auth.onAuthStateChange((_event, session) => { setUserFromSession(session); });
+  }
+  // Clean a leftover OAuth token/error hash from the URL.
+  if (/(access_token|error)=/.test(location.hash)) history.replaceState(null, "", location.pathname);
+
+  backend = currentUser ? cloudBackend : localBackend;
+  await backend.load();
+  renderAuth();
+
   window.addEventListener("hashchange", route);
-  route();
-  if (!db) toast("Storage unavailable — changes won't be saved", "err");
+  await route();
+
+  if (currentUser) await maybeOfferSync();
+  if (!db) toast("Local storage unavailable", "err");
 })();
 </script>
 </body>
