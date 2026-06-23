@@ -17,5 +17,7 @@ A classic tier-list maker in a single, self-contained `index.html` — no backen
 ## Cloud setup (Supabase)
 Sign-in and sharing are backed by Supabase. To self-host: create a Supabase project, run [supabase/schema.sql](supabase/schema.sql) in the SQL Editor (creates the tables, RLS policies, and the `tier-images` Storage bucket), enable the Google auth provider, add your app URL to the allowed Redirect URLs, then set `SUPABASE_URL` / `SUPABASE_ANON_KEY` near the top of the `<script>` in `index.html`. The anon (publishable) key is safe to commit — row-level security is the access boundary.
 
+**Link previews** (the card shown when a share link is posted to chat/social) are served by the [`share` Edge Function](supabase/functions/share/index.ts), because Storage refuses to serve active HTML. Deploy it once and make it public (no JWT): in the Dashboard → Edge Functions, create a function named `share`, paste the file, and turn **Verify JWT off**; or via CLI: `supabase functions deploy share --no-verify-jwt`. Until it's deployed, Share copies a plain link (no preview card).
+
 ## Notes
 Signed out, lists live only in this browser (IndexedDB). To share without an account, use **Export JSON** (re-importable) or **Export PNG** (image). Signed in, lists sync to your account and public lists are shareable by link.

@@ -1137,64 +1137,32 @@ async function renderShareImage(board) {
   return new Promise((r) => canvas.toBlob(r, "image/png"));
 }
 
-function escapeHtml(s) {
-  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
+// The share-preview page is served by the Supabase Edge Function `share`
+// (Storage can't host active HTML — it's neutered to text/plain).
+function shareFnUrl(id) { return `${SUPABASE_URL}/functions/v1/share?id=${id}`; }
 
-// A self-contained share page: Open Graph tags for crawlers + instant redirect for people.
-function shareHtml(board, imageUrl, appUrl) {
-  const title = escapeHtml(board.name || "Tier List");
-  const itemCount = Object.keys(board.items || {}).length;
-  const desc = escapeHtml(`A tier list with ${itemCount} item${itemCount === 1 ? "" : "s"} — open to view.`);
-  const img = escapeHtml(imageUrl), url = escapeHtml(appUrl);
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title} — Tier List</title>
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Tier List Maker">
-<meta property="og:title" content="${title}">
-<meta property="og:description" content="${desc}">
-<meta property="og:image" content="${img}">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:url" content="${url}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${title}">
-<meta name="twitter:description" content="${desc}">
-<meta name="twitter:image" content="${img}">
-<meta http-equiv="refresh" content="0; url=${url}">
-<script>location.replace(${JSON.stringify(appUrl)});<\/script>
-</head><body style="background:#15161b;color:#e9eaed;font-family:-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:40px">
-Redirecting to <a style="color:#6ea8fe" href="${url}">${title}</a>…
-</body></html>`;
-}
-
-// Build the crawler-facing share link: render a preview image + an OG share page, upload both to
-// Storage, and return the public URL of the share page. Returns null on failure.
-async function buildShareLink(board) {
+let shareFnOk = null; // cached true once we confirm the function is deployed
+async function shareFnReachable(id) {
+  if (shareFnOk === true) return true;
   try {
-    const appUrl = appLink(board.id);
+    const r = await fetch(shareFnUrl(id), { method: "GET" });
+    if (r.ok) shareFnOk = true;
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+// Render the board's preview image and upload it to Storage so the share page can embed it.
+async function uploadPreviewImage(board) {
+  try {
     const imgBlob = await renderShareImage(board);
     const imgPath = `${currentUser.id}/${board.id}/_preview.png`;
-    const u1 = await sb.storage.from("tier-images").upload(imgPath, imgBlob, { contentType: "image/png", upsert: true });
-    if (u1.error) throw u1.error;
-    const imgUrl = sb.storage.from("tier-images").getPublicUrl(imgPath).data.publicUrl;
-
-    const html = shareHtml(board, imgUrl, appUrl);
-    const htmlPath = `${currentUser.id}/${board.id}/share.html`;
-    const u2 = await sb.storage.from("tier-images").upload(
-      htmlPath, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
-    if (u2.error) throw u2.error;
-    return sb.storage.from("tier-images").getPublicUrl(htmlPath).data.publicUrl;
-  } catch (e) {
-    console.warn("share build failed", e);
-    return null;
-  }
+    const up = await sb.storage.from("tier-images").upload(imgPath, imgBlob, { contentType: "image/png", upsert: true });
+    return !up.error;
+  } catch (e) { console.warn("preview upload failed", e); return false; }
 }
 
-async function copyLink(link) {
-  try { await navigator.clipboard.writeText(link); toast("Share link copied — preview shows when posted"); }
+async function copyLink(link, msg) {
+  try { await navigator.clipboard.writeText(link); toast(msg || "Share link copied"); }
   catch (e) { prompt("Copy this share link:", link); }
 }
 
@@ -1206,9 +1174,15 @@ async function shareCurrent() {
     await setVisibility("shared");
   }
   toast("Building share preview…");
-  const link = await buildShareLink(state);
-  if (link) copyLink(link);
-  else { copyLink(appLink(state.id)); } // fall back to the plain app link if upload failed
+  const board = state;
+  const reachable = await shareFnReachable(board.id);
+  if (!reachable) {
+    // Share function not deployed yet — copy the plain app link (no preview card).
+    copyLink(appLink(board.id), "Link copied (deploy the ‘share’ function to get preview cards)");
+    return;
+  }
+  await uploadPreviewImage(board); // refresh the preview image the card will show
+  copyLink(shareFnUrl(board.id), "Share link copied — preview shows when posted");
 }
 
 async function duplicateOpenToMyLists() {

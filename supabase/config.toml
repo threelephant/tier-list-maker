@@ -1,0 +1,5 @@
+project_id = "hizumyjjthjxahykrhpo"
+
+# The share-preview page must be reachable by social/link crawlers (no auth header).
+[functions.share]
+verify_jwt = false
