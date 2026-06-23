@@ -1062,7 +1062,7 @@ function applyEditableUI() {
   byId("roDup").textContent = currentUser ? "Duplicate to my lists" : "Sign in to save a copy";
 }
 
-function shareLink() { return location.origin + location.pathname + "#/b/" + state.id; }
+function appLink(id) { return location.origin + location.pathname + "#/b/" + id; }
 
 async function setVisibility(v) {
   if (!state || !canEdit || backend.mode !== "cloud") return;
@@ -1077,6 +1077,127 @@ async function setVisibility(v) {
   toast(msg);
 }
 
+// Load images (with CORS so they don't taint the canvas). Returns a map src→Image (or null).
+function preloadImages(srcs) {
+  const uniq = [...new Set(srcs.filter(Boolean))];
+  const map = {};
+  return Promise.all(uniq.map((src) => new Promise((res) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => { map[src] = im; res(); };
+    im.onerror = () => { map[src] = null; res(); };
+    im.src = src;
+  }))).then(() => map);
+}
+
+// Render a 1200×630 social-preview image of a board (title + tier rows with thumbnails).
+async function renderShareImage(board) {
+  const W = 1200, H = 630, PAD = 52;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#15161b"; ctx.fillRect(0, 0, W, H);
+
+  // Title + subtitle
+  ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillStyle = "#e9eaed";
+  ctx.font = "800 48px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.fillText(fitText(ctx, board.name || "Tier List", W - 2 * PAD), PAD, 42);
+  const itemCount = Object.keys(board.items || {}).length;
+  ctx.fillStyle = "#9aa0ac";
+  ctx.font = "500 23px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.fillText(`${itemCount} item${itemCount === 1 ? "" : "s"} · ${board.tiers.length} tiers · 🏆 Tier List Maker`, PAD, 108);
+
+  // Tier rows
+  const top = 168, bottom = H - 44, CHIP = 60, CELL = 60, RGAP = 12;
+  const maxRows = Math.max(1, Math.floor((bottom - top + RGAP) / (CHIP + RGAP)));
+  const tiers = board.tiers.slice(0, maxRows);
+  const need = tiers.flatMap((t) => t.items.slice(0, 14)).map((id) => board.items[id] && board.items[id].image);
+  const imgs = await preloadImages(need);
+
+  let y = top;
+  for (const t of tiers) {
+    ctx.fillStyle = t.color; roundRect(ctx, PAD, y, CHIP, CHIP, 12); ctx.fill();
+    ctx.fillStyle = contrastColor(t.color);
+    ctx.font = "800 28px -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText((t.name || "?").slice(0, 2), PAD + CHIP / 2, y + CHIP / 2);
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+
+    let x = PAD + CHIP + 16;
+    for (const id of t.items) {
+      if (x + CELL > W - PAD) break;
+      ctx.fillStyle = "#262934"; roundRect(ctx, x, y, CELL, CELL, 9); ctx.fill();
+      const im = imgs[board.items[id] && board.items[id].image];
+      if (im) { ctx.save(); roundRect(ctx, x, y, CELL, CELL, 9); ctx.clip(); drawCover(ctx, im, x, y, CELL, CELL); ctx.restore(); }
+      x += CELL + 9;
+    }
+    y += CHIP + RGAP;
+  }
+  return new Promise((r) => canvas.toBlob(r, "image/png"));
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// A self-contained share page: Open Graph tags for crawlers + instant redirect for people.
+function shareHtml(board, imageUrl, appUrl) {
+  const title = escapeHtml(board.name || "Tier List");
+  const itemCount = Object.keys(board.items || {}).length;
+  const desc = escapeHtml(`A tier list with ${itemCount} item${itemCount === 1 ? "" : "s"} — open to view.`);
+  const img = escapeHtml(imageUrl), url = escapeHtml(appUrl);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} — Tier List</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Tier List Maker">
+<meta property="og:title" content="${title}">
+<meta property="og:description" content="${desc}">
+<meta property="og:image" content="${img}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="${url}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${title}">
+<meta name="twitter:description" content="${desc}">
+<meta name="twitter:image" content="${img}">
+<meta http-equiv="refresh" content="0; url=${url}">
+<script>location.replace(${JSON.stringify(appUrl)});<\/script>
+</head><body style="background:#15161b;color:#e9eaed;font-family:-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:40px">
+Redirecting to <a style="color:#6ea8fe" href="${url}">${title}</a>…
+</body></html>`;
+}
+
+// Build the crawler-facing share link: render a preview image + an OG share page, upload both to
+// Storage, and return the public URL of the share page. Returns null on failure.
+async function buildShareLink(board) {
+  try {
+    const appUrl = appLink(board.id);
+    const imgBlob = await renderShareImage(board);
+    const imgPath = `${currentUser.id}/${board.id}/_preview.png`;
+    const u1 = await sb.storage.from("tier-images").upload(imgPath, imgBlob, { contentType: "image/png", upsert: true });
+    if (u1.error) throw u1.error;
+    const imgUrl = sb.storage.from("tier-images").getPublicUrl(imgPath).data.publicUrl;
+
+    const html = shareHtml(board, imgUrl, appUrl);
+    const htmlPath = `${currentUser.id}/${board.id}/share.html`;
+    const u2 = await sb.storage.from("tier-images").upload(
+      htmlPath, new Blob([html], { type: "text/html" }), { contentType: "text/html", upsert: true });
+    if (u2.error) throw u2.error;
+    return sb.storage.from("tier-images").getPublicUrl(htmlPath).data.publicUrl;
+  } catch (e) {
+    console.warn("share build failed", e);
+    return null;
+  }
+}
+
+async function copyLink(link) {
+  try { await navigator.clipboard.writeText(link); toast("Share link copied — preview shows when posted"); }
+  catch (e) { prompt("Copy this share link:", link); }
+}
+
 async function shareCurrent() {
   if (!state) return;
   if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
@@ -1084,9 +1205,10 @@ async function shareCurrent() {
     if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view. It stays on your home under “Shared” but isn't publicly listed.")) return;
     await setVisibility("shared");
   }
-  const link = shareLink();
-  try { await navigator.clipboard.writeText(link); toast("Share link copied"); }
-  catch (e) { prompt("Copy this share link:", link); }
+  toast("Building share preview…");
+  const link = await buildShareLink(state);
+  if (link) copyLink(link);
+  else { copyLink(appLink(state.id)); } // fall back to the plain app link if upload failed
 }
 
 async function duplicateOpenToMyLists() {

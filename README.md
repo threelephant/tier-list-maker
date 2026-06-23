@@ -5,7 +5,7 @@ A classic tier-list maker in a single, self-contained `index.html` — no backen
 **Live:** https://threelephant.github.io/tier-list-maker/
 
 ## Features
-- **Accounts + sharing (optional)** — sign in with Google to sync your lists to the cloud (Supabase); make any list **public** and share it with a link (others see a read-only view). Signed out, everything still works locally.
+- **Accounts + sharing (optional)** — sign in with Google to sync your lists to the cloud (Supabase); make any list **public** or **shared** and send the link (others see a read-only view). Shared links unfurl into a **preview card** (Open Graph image of the board) when posted to chat/social. Signed out, everything still works locally.
 - **Multiple tier lists** — a menu home page to create, open, rename, duplicate, and delete lists, each with a live preview.
 - Add images by **paste** (`⌘V` / `Ctrl V`), **drag-and-drop** of image files, or the **+ Add items** button. Images are auto-downscaled to keep things fast.
 - Classic **S / A / B / C / D / F** tiers — rename, recolor (color picker), reorder, add, or delete (deleted tiers' items return to the *Unranked* tray, never lost).
