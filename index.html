@@ -309,27 +309,147 @@
   @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
   body.file-dragging .pool .dropzone { background: rgba(110,168,254,.08); box-shadow: inset 0 0 0 2px rgba(110,168,254,.4); }
+
+  /* ---------- Views ---------- */
+  [hidden] { display: none !important; }
+
+  /* ---------- Board header extras ---------- */
+  .back-btn { flex: 0 0 auto; }
+  .board-name {
+    flex: 0 1 auto;
+    min-width: 120px; max-width: 340px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text);
+    font-size: 17px; font-weight: 700;
+    padding: 6px 9px;
+    border-radius: 8px;
+    font-family: inherit;
+  }
+  .board-name:hover { border-color: var(--line); }
+  .board-name:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+  .header-spacer { flex: 1 1 auto; }
+
+  /* ---------- Menu ---------- */
+  #menuGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+  }
+  .list-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .1s, border-color .1s, box-shadow .1s;
+  }
+  .list-card:hover { transform: translateY(-3px); border-color: #454b59; box-shadow: 0 10px 24px rgba(0,0,0,.45); }
+
+  .list-preview {
+    display: flex; flex-direction: column; gap: 5px;
+    padding: 10px;
+    background: var(--bg);
+    min-height: 104px;
+  }
+  .mini-tier { display: flex; align-items: center; gap: 4px; min-height: 22px; }
+  .mini-chip {
+    flex: 0 0 auto;
+    width: 22px; height: 22px;
+    border-radius: 4px;
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 800;
+  }
+  .mini-cells { display: flex; align-items: center; gap: 3px; overflow: hidden; }
+  .mini-cell {
+    width: 22px; height: 22px;
+    border-radius: 3px;
+    object-fit: cover;
+    background: var(--panel-2);
+    flex: 0 0 auto;
+  }
+  .mini-more { font-size: 10px; color: var(--muted); padding-left: 2px; white-space: nowrap; }
+  .list-preview-empty {
+    margin: auto;
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+
+  .list-meta { padding: 11px 12px; border-top: 1px solid var(--line); }
+  .list-name {
+    font-size: 14px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .list-sub { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+  .list-actions {
+    position: absolute; top: 8px; right: 8px;
+    display: flex; gap: 6px;
+    opacity: 0; transition: opacity .12s;
+  }
+  .list-card:hover .list-actions { opacity: 1; }
+  .list-actions button {
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border: 1px solid var(--line);
+    background: rgba(13,14,18,.82);
+    color: var(--text);
+    border-radius: 6px;
+    cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .list-actions button:hover { background: var(--panel-2); }
+  .list-actions button.del:hover { color: #ffb4b4; border-color: var(--danger); }
+
+  .menu-empty { max-width: 460px; margin: 10vh auto; text-align: center; color: var(--muted); }
+  .menu-empty-art { font-size: 54px; line-height: 1; }
+  .menu-empty h2 { color: var(--text); margin: 12px 0 6px; }
+  .menu-empty p { margin: 0 0 18px; }
 </style>
 </head>
 <body>
-  <header>
-    <h1><span class="logo">🏆</span> Tier List Maker</h1>
-    <button class="btn primary" id="addItemBtn">+ Add items</button>
-    <button class="btn" id="exportPngBtn">Export PNG</button>
-    <button class="btn" id="exportJsonBtn">Export JSON</button>
-    <button class="btn" id="importJsonBtn">Import JSON</button>
-    <button class="btn danger ghost" id="resetBtn">Reset</button>
-  </header>
+  <!-- Menu view (main page) -->
+  <div id="menuView">
+    <header class="menu-header">
+      <h1><span class="logo">🏆</span> Tier Lists</h1>
+      <button class="btn primary" id="newListBtn">+ New list</button>
+      <button class="btn" id="importListBtn">Import list</button>
+    </header>
+    <main>
+      <div id="menuGrid"></div>
+      <div id="menuEmpty" class="menu-empty" hidden>
+        <div class="menu-empty-art">🏆</div>
+        <h2>No tier lists yet</h2>
+        <p>Create your first tier list, or import one from a JSON file.</p>
+        <button class="btn primary" id="newListBtn2">+ New list</button>
+      </div>
+    </main>
+  </div>
 
-  <main>
-    <div class="board" id="board"></div>
-    <button class="add-tier" id="addTierBtn">+ Add tier</button>
+  <!-- Board view -->
+  <div id="boardView" hidden>
+    <header>
+      <button class="btn ghost back-btn" id="backBtn" title="All lists">← Lists</button>
+      <input id="boardName" class="board-name" maxlength="80" placeholder="Untitled list" aria-label="List name" />
+      <span class="header-spacer"></span>
+      <button class="btn primary" id="addItemBtn">+ Add items</button>
+      <button class="btn" id="exportPngBtn">Export PNG</button>
+      <button class="btn" id="exportJsonBtn">Export JSON</button>
+      <button class="btn danger ghost" id="resetBtn">Reset</button>
+    </header>
 
-    <section class="pool">
-      <div class="pool-head">Unranked</div>
-      <div class="dropzone" id="pool" data-container="pool"></div>
-    </section>
-  </main>
+    <main>
+      <div class="board" id="board"></div>
+      <button class="add-tier" id="addTierBtn">+ Add tier</button>
+
+      <section class="pool">
+        <div class="pool-head">Unranked</div>
+        <div class="dropzone" id="pool" data-container="pool"></div>
+      </section>
+    </main>
+  </div>
 
   <!-- Item editor -->
   <div class="overlay" id="editorOverlay">
@@ -372,23 +492,30 @@ const DEFAULT_TIERS = [
   { name: "F", color: "#7fff7f" },
 ];
 
-let state = null;        // { version, tiers:[{id,name,color,items:[]}], pool:[], items:{} }
-let itemCounter = 0;     // for default "Item N" names
+// A "board" is one tier list: { id, name, version, tiers, pool, items, createdAt, updatedAt }
+let state = null;        // the currently-open board (null while on the menu)
+let itemCounter = 0;     // for default "Item N" names within the open board
+let boardsCache = [];    // every board, for the menu
+let order = [];          // board ids in menu order
+let currentView = "menu";
 
 const uid = () =>
   (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2));
 
-function defaultState() {
-  return {
-    version: 1,
-    tiers: DEFAULT_TIERS.map((t) => ({ id: uid(), name: t.name, color: t.color, items: [] })),
-    pool: [],
-    items: {},
-  };
+const nowMs = () => Date.now();
+
+function defaultTiers() {
+  return DEFAULT_TIERS.map((t) => ({ id: uid(), name: t.name, color: t.color, items: [] }));
+}
+
+function newBoard(name) {
+  const t = nowMs();
+  return { id: uid(), name: name || "Untitled list", version: 1,
+    tiers: defaultTiers(), pool: [], items: {}, createdAt: t, updatedAt: t };
 }
 
 /* ============================================================
-   Persistence (IndexedDB)
+   Persistence (IndexedDB) — v2: a "boards" store + an "app" store
    ============================================================ */
 let db = null;
 let saveTimer = null;
@@ -396,33 +523,297 @@ let saveTimer = null;
 function openDB() {
   return new Promise((resolve) => {
     let req;
-    try { req = indexedDB.open("tierlist", 1); }
+    try { req = indexedDB.open("tierlist", 2); }
     catch (e) { return resolve(null); }
-    req.onupgradeneeded = () => req.result.createObjectStore("state");
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains("state")) d.createObjectStore("state");   // v1, kept for migration
+      if (!d.objectStoreNames.contains("boards")) d.createObjectStore("boards"); // id -> board
+      if (!d.objectStoreNames.contains("app")) d.createObjectStore("app");       // key -> value (order, lastOpened)
+    };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
   });
 }
 
-function loadState() {
+function dbGet(store, key) {
   return new Promise((resolve) => {
     if (!db) return resolve(null);
     try {
-      const req = db.transaction("state", "readonly").objectStore("state").get("current");
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
+      const r = db.transaction(store, "readonly").objectStore(store).get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => resolve(null);
     } catch (e) { resolve(null); }
   });
 }
-
-function persist() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    if (!db) return;
+function dbGetAll(store) {
+  return new Promise((resolve) => {
+    if (!db) return resolve([]);
     try {
-      db.transaction("state", "readwrite").objectStore("state").put(state, "current");
-    } catch (e) { /* ignore */ }
-  }, 250);
+      const r = db.transaction(store, "readonly").objectStore(store).getAll();
+      r.onsuccess = () => resolve(r.result || []);
+      r.onerror = () => resolve([]);
+    } catch (e) { resolve([]); }
+  });
+}
+function dbPut(store, value, key) {
+  return new Promise((resolve) => {
+    if (!db) return resolve(false);
+    try {
+      const r = db.transaction(store, "readwrite").objectStore(store).put(value, key);
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+function dbDelete(store, key) {
+  return new Promise((resolve) => {
+    if (!db) return resolve(false);
+    try {
+      const r = db.transaction(store, "readwrite").objectStore(store).delete(key);
+      r.onsuccess = () => resolve(true);
+      r.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+
+const saveBoard = (b) => dbPut("boards", b, b.id);
+const removeBoardDB = (id) => dbDelete("boards", id);
+const setOrderDB = () => dbPut("app", order.slice(), "order");
+const setLastOpened = (id) => dbPut("app", id, "lastOpened");
+
+// Debounced save of the currently-open board. Keeps the in-memory cache fresh
+// immediately so the menu preview is up to date the moment you go back.
+function persist() {
+  if (!state) return;
+  state.updatedAt = nowMs();
+  const i = boardsCache.findIndex((b) => b.id === state.id);
+  if (i >= 0) boardsCache[i] = state; else boardsCache.push(state);
+  if (!order.includes(state.id)) { order.push(state.id); setOrderDB(); }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveBoard(state); }, 250);
+}
+
+async function loadBoards() {
+  boardsCache = await dbGetAll("boards");
+  order = (await dbGet("app", "order")) || [];
+  // Reconcile order with what actually exists.
+  const ids = new Set(boardsCache.map((b) => b.id));
+  order = order.filter((id) => ids.has(id));
+  boardsCache.forEach((b) => { if (!order.includes(b.id)) order.push(b.id); });
+}
+
+// One-time migration of the old single board (v1 `state.current`) into the new store.
+async function migrateIfNeeded() {
+  if (boardsCache.length > 0) return;
+  const legacy = await dbGet("state", "current");
+  if (legacy && Array.isArray(legacy.tiers) && legacy.items) {
+    const t = nowMs();
+    const board = { id: uid(), name: "My Tier List", version: 1,
+      tiers: legacy.tiers, pool: Array.isArray(legacy.pool) ? legacy.pool : [],
+      items: legacy.items, createdAt: t, updatedAt: t };
+    boardsCache = [board];
+    order = [board.id];
+    await saveBoard(board);
+    await setOrderDB();
+    await setLastOpened(board.id);
+  }
+}
+
+function orderedBoards() {
+  const map = new Map(boardsCache.map((b) => [b.id, b]));
+  return order.map((id) => map.get(id)).filter(Boolean);
+}
+
+/* ============================================================
+   Views, routing & board lifecycle
+   ============================================================ */
+const menuView = document.getElementById("menuView");
+const boardView = document.getElementById("boardView");
+const menuGrid = document.getElementById("menuGrid");
+const menuEmpty = document.getElementById("menuEmpty");
+const boardNameInput = document.getElementById("boardName");
+
+function goMenu() { location.hash = "#/"; }
+function goBoard(id) { location.hash = "#/b/" + id; }
+
+function route() {
+  const m = location.hash.match(/^#\/b\/(.+)$/);
+  if (m) {
+    const board = boardsCache.find((b) => b.id === decodeURIComponent(m[1]));
+    if (board) { openBoard(board); return; }
+  }
+  showMenu();
+}
+
+function showMenu() {
+  currentView = "menu";
+  state = null;
+  boardView.hidden = true;
+  menuView.hidden = false;
+  renderMenu();
+}
+
+function openBoard(board) {
+  currentView = "board";
+  state = board;
+  itemCounter = Object.keys(board.items).length;
+  setLastOpened(board.id);
+  boardNameInput.value = board.name;
+  menuView.hidden = true;
+  boardView.hidden = false;
+  render();
+}
+
+async function createBoard() {
+  const b = newBoard();
+  boardsCache.push(b);
+  order.push(b.id);
+  await saveBoard(b);
+  await setOrderDB();
+  goBoard(b.id);
+  setTimeout(() => { boardNameInput.focus(); boardNameInput.select(); }, 40);
+}
+
+async function deleteBoard(id) {
+  const b = boardsCache.find((x) => x.id === id);
+  if (!b) return;
+  if (!confirm(`Delete "${b.name}"? This can't be undone.`)) return;
+  boardsCache = boardsCache.filter((x) => x.id !== id);
+  order = order.filter((x) => x !== id);
+  await removeBoardDB(id);
+  await setOrderDB();
+  toast("List deleted");
+  if (state && state.id === id) goMenu(); else renderMenu();
+}
+
+async function duplicateBoard(id) {
+  const b = boardsCache.find((x) => x.id === id);
+  if (!b) return;
+  const t = nowMs();
+  const copy = JSON.parse(JSON.stringify(b));
+  copy.id = uid();
+  copy.name = b.name + " (copy)";
+  copy.createdAt = t; copy.updatedAt = t;
+  boardsCache.push(copy);
+  order.push(copy.id);
+  await saveBoard(copy);
+  await setOrderDB();
+  renderMenu();
+  toast("List duplicated");
+}
+
+function renameBoard(id, name) {
+  const b = boardsCache.find((x) => x.id === id);
+  if (!b) return;
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  b.name = trimmed;
+  b.updatedAt = nowMs();
+  saveBoard(b);
+  if (state && state.id === id) boardNameInput.value = b.name;
+}
+
+function timeAgo(ts) {
+  if (!ts) return "—";
+  const s = Math.floor((nowMs() - ts) / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60); if (m < 60) return m + "m ago";
+  const h = Math.floor(m / 60); if (h < 24) return h + "h ago";
+  const d = Math.floor(h / 24); if (d < 30) return d + "d ago";
+  const mo = Math.floor(d / 30); if (mo < 12) return mo + "mo ago";
+  return Math.floor(mo / 12) + "y ago";
+}
+
+function renderMenu() {
+  const boards = orderedBoards();
+  menuGrid.innerHTML = "";
+  menuEmpty.hidden = boards.length > 0;
+  menuGrid.hidden = boards.length === 0;
+  boards.forEach((b) => menuGrid.appendChild(renderListCard(b)));
+}
+
+function menuIconBtn(label, title, cls, onClick) {
+  const btn = document.createElement("button");
+  btn.textContent = label;
+  btn.title = title;
+  if (cls) btn.className = cls;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function renderListCard(b) {
+  const card = document.createElement("div");
+  card.className = "list-card";
+  card.addEventListener("click", () => goBoard(b.id));
+
+  // Preview: a few tier rows with mini chips + item thumbnails
+  const preview = document.createElement("div");
+  preview.className = "list-preview";
+  const itemCount = Object.keys(b.items).length;
+  let drewImage = false;
+  b.tiers.slice(0, 5).forEach((t) => {
+    const row = document.createElement("div");
+    row.className = "mini-tier";
+    const chip = document.createElement("div");
+    chip.className = "mini-chip";
+    chip.style.background = t.color;
+    chip.style.color = contrastColor(t.color);
+    chip.textContent = (t.name || "?").slice(0, 2);
+    const cells = document.createElement("div");
+    cells.className = "mini-cells";
+    t.items.slice(0, 7).forEach((id) => {
+      const it = b.items[id];
+      if (!it) return;
+      const img = document.createElement("img");
+      img.className = "mini-cell";
+      img.src = it.image;
+      img.alt = "";
+      cells.appendChild(img);
+      drewImage = true;
+    });
+    if (t.items.length > 7) {
+      const more = document.createElement("span");
+      more.className = "mini-more";
+      more.textContent = "+" + (t.items.length - 7);
+      cells.appendChild(more);
+    }
+    row.append(chip, cells);
+    preview.appendChild(row);
+  });
+  if (itemCount === 0 && !drewImage) {
+    preview.innerHTML = '<div class="list-preview-empty">Empty list</div>';
+  }
+
+  // Meta
+  const meta = document.createElement("div");
+  meta.className = "list-meta";
+  const name = document.createElement("div");
+  name.className = "list-name";
+  name.textContent = b.name;
+  const sub = document.createElement("div");
+  sub.className = "list-sub";
+  sub.textContent =
+    itemCount + " item" + (itemCount === 1 ? "" : "s") + " · " +
+    b.tiers.length + " tier" + (b.tiers.length === 1 ? "" : "s") + " · " +
+    timeAgo(b.updatedAt);
+  meta.append(name, sub);
+
+  // Hover actions
+  const actions = document.createElement("div");
+  actions.className = "list-actions";
+  actions.append(
+    menuIconBtn("✎", "Rename", "", (e) => {
+      e.stopPropagation();
+      const nn = prompt("Rename list:", b.name);
+      if (nn != null) { renameBoard(b.id, nn); renderMenu(); }
+    }),
+    menuIconBtn("⧉", "Duplicate", "", (e) => { e.stopPropagation(); duplicateBoard(b.id); }),
+    menuIconBtn("✕", "Delete", "del", (e) => { e.stopPropagation(); deleteBoard(b.id); })
+  );
+
+  card.append(actions, preview, meta);
+  return card;
 }
 
 /* ============================================================
@@ -988,13 +1379,20 @@ function roundRect(ctx, x, y, w, h, r) {
 /* ============================================================
    Export / import JSON
    ============================================================ */
+function slugify(s) {
+  return (s || "tier-list").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "tier-list";
+}
+
 function exportJSON() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-  download(blob, "tier-list.json");
+  if (!state) return;
+  const out = { name: state.name, version: 1, tiers: state.tiers, pool: state.pool, items: state.items };
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+  download(blob, slugify(state.name) + ".json");
   toast("JSON exported");
 }
 
-async function importJSON() {
+// Import a JSON file from the menu → creates a new list and opens it.
+async function importList() {
   const files = await pickFiles("application/json,.json", false);
   if (!files.length) return;
   try {
@@ -1002,17 +1400,26 @@ async function importJSON() {
     const data = JSON.parse(text);
     if (!data || !Array.isArray(data.tiers) || typeof data.items !== "object" || !Array.isArray(data.pool))
       throw new Error("bad shape");
-    // Re-id nothing; trust the file but ensure required fields exist.
+    // Trust the file but ensure required tier fields exist.
     data.tiers.forEach((t) => {
       t.id = t.id || uid();
       t.items = Array.isArray(t.items) ? t.items : [];
       t.color = t.color || "#888888";
       t.name = t.name == null ? "?" : String(t.name);
     });
-    state = { version: 1, tiers: data.tiers, pool: data.pool, items: data.items };
-    render();
-    persist();
-    toast("Tier list imported");
+    const t = nowMs();
+    const board = {
+      id: uid(),
+      name: (data.name && String(data.name)) || files[0].name.replace(/\.json$/i, "") || "Imported list",
+      version: 1, tiers: data.tiers, pool: data.pool, items: data.items,
+      createdAt: t, updatedAt: t,
+    };
+    boardsCache.push(board);
+    order.push(board.id);
+    await saveBoard(board);
+    await setOrderDB();
+    toast("List imported");
+    goBoard(board.id);
   } catch (e) {
     toast("Import failed — not a valid tier-list file", "err");
   }
@@ -1021,8 +1428,9 @@ async function importJSON() {
 /* ============================================================
    Global handlers
    ============================================================ */
-// Paste image from clipboard
+// Paste image from clipboard (only while a board is open)
 document.addEventListener("paste", (e) => {
+  if (currentView !== "board") return;
   if (editorOverlay.classList.contains("show")) return; // let textfields paste normally
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
@@ -1038,7 +1446,7 @@ document.addEventListener("paste", (e) => {
 window.addEventListener("dragover", (e) => {
   if (e.dataTransfer && e.dataTransfer.types.includes("Files")) {
     e.preventDefault();
-    document.body.classList.add("file-dragging");
+    if (currentView === "board") document.body.classList.add("file-dragging");
   }
 });
 window.addEventListener("dragleave", (e) => {
@@ -1048,11 +1456,12 @@ window.addEventListener("drop", (e) => {
   document.body.classList.remove("file-dragging");
   if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
     e.preventDefault(); // a zone would have stopPropagation'd already; this catches page drops
-    addImagesFromFiles(e.dataTransfer.files, "pool");
+    if (currentView === "board") addImagesFromFiles(e.dataTransfer.files, "pool");
   }
 });
 
-// Toolbar
+// Board toolbar
+document.getElementById("backBtn").addEventListener("click", goMenu);
 document.getElementById("addItemBtn").addEventListener("click", async () => {
   const files = await pickFiles("image/*", true);
   if (files.length) addImagesFromFiles(files, "pool");
@@ -1060,30 +1469,41 @@ document.getElementById("addItemBtn").addEventListener("click", async () => {
 document.getElementById("addTierBtn").addEventListener("click", addTier);
 document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
 document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
-document.getElementById("importJsonBtn").addEventListener("click", importJSON);
 document.getElementById("resetBtn").addEventListener("click", () => {
-  if (!confirm("Reset the board to default tiers and remove all items?")) return;
-  state = defaultState();
+  if (!state) return;
+  if (!confirm("Reset this board to default tiers and remove all items?")) return;
+  state.tiers = defaultTiers();
+  state.pool = [];
+  state.items = {};
   itemCounter = 0;
   render();
   persist();
   toast("Board reset");
 });
 
+// Editable board name
+boardNameInput.addEventListener("change", () => {
+  if (!state) return;
+  state.name = boardNameInput.value.trim() || "Untitled list";
+  boardNameInput.value = state.name;
+  persist();
+});
+boardNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") boardNameInput.blur(); });
+
+// Menu toolbar
+document.getElementById("newListBtn").addEventListener("click", createBoard);
+document.getElementById("newListBtn2").addEventListener("click", createBoard);
+document.getElementById("importListBtn").addEventListener("click", importList);
+
 /* ============================================================
    Boot
    ============================================================ */
 (async function init() {
   db = await openDB();
-  const saved = await loadState();
-  if (saved && Array.isArray(saved.tiers) && saved.items) {
-    state = saved;
-    // Restore the item counter so new default names don't collide
-    itemCounter = Object.keys(saved.items).length;
-  } else {
-    state = defaultState();
-  }
-  render();
+  await loadBoards();
+  await migrateIfNeeded();
+  window.addEventListener("hashchange", route);
+  route();
   if (!db) toast("Storage unavailable — changes won't be saved", "err");
 })();
 </script>
