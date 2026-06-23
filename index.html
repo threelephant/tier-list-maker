@@ -514,7 +514,7 @@
       <select id="visibilitySelect" class="vis-select" hidden title="Who can see this list" aria-label="List visibility">
         <option value="private">🔒 Private</option>
         <option value="public">🌐 Public</option>
-        <option value="shared">🔗 Shared (link only)</option>
+        <option value="shared">🔗 Shared (by link)</option>
       </select>
       <button class="btn" id="shareBtn" hidden>Share</button>
       <button class="btn" id="exportPngBtn">Export PNG</button>
@@ -1071,8 +1071,8 @@ async function setVisibility(v) {
   if (i >= 0) boardsCache[i] = state;
   await backend.save(state);
   applyEditableUI();
-  const msg = v === "public" ? "Public — listed on your home + shareable by link"
-            : v === "shared" ? "Shared — link-only (not shown on your home)"
+  const msg = v === "public" ? "Public — shareable by link, shown under “Public”"
+            : v === "shared" ? "Shared — anyone with the link can view; shown under “Shared” on your home"
             : "Private — only you can see this";
   toast(msg);
 }
@@ -1081,7 +1081,7 @@ async function shareCurrent() {
   if (!state) return;
   if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
   if (state.visibility === "private") {
-    if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view (it won't appear on your home).")) return;
+    if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view. It stays on your home under “Shared” but isn't publicly listed.")) return;
     await setVisibility("shared");
   }
   const link = shareLink();
@@ -1184,14 +1184,16 @@ function renderMenu() {
   menuGrid.innerHTML = "";
 
   if (backend.mode === "cloud") {
-    // Sections: Private + Public. 'shared' lists are link-only (excluded from home).
+    // Owner's home: Private + Public + Shared sections. ('shared' is link-only for
+    // *others* — never publicly listed — but still shown here for the owner.)
     const priv = boards.filter((b) => (b.visibility || "private") === "private");
     const pub = boards.filter((b) => b.visibility === "public");
-    const shown = priv.length + pub.length;
-    menuEmpty.hidden = shown > 0;
-    menuGrid.hidden = shown === 0;
+    const shared = boards.filter((b) => b.visibility === "shared");
+    menuEmpty.hidden = boards.length > 0;
+    menuGrid.hidden = boards.length === 0;
     appendSection("Private", priv);
     appendSection("Public", pub);
+    appendSection("Shared", shared);
   } else {
     // Local mode: one flat grid.
     menuEmpty.hidden = boards.length > 0;
