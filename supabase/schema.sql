@@ -68,7 +68,7 @@ create table if not exists public.tier_lists (
   id         uuid primary key default gen_random_uuid(),
   owner      uuid not null references auth.users on delete cascade,
   name       text not null default 'Untitled list',
-  visibility text not null default 'private' check (visibility in ('public','private')),
+  visibility text not null default 'private' check (visibility in ('private','public','shared')),
   data       jsonb not null default '{}'::jsonb,   -- { tiers, pool, items } with image URLs
   position   integer not null default 0,           -- menu order
   created_at timestamptz not null default now(),
@@ -87,11 +87,12 @@ create policy "Owners manage their lists"
   using (auth.uid() = owner)
   with check (auth.uid() = owner);
 
--- Anyone (including anonymous) can READ a public list (for share links).
+-- Anyone (including anonymous) can READ a public OR shared list (for share links).
+-- 'public' = also listed on the owner's home; 'shared' = link-only (not listed).
 drop policy if exists "Public lists are readable by anyone" on public.tier_lists;
 create policy "Public lists are readable by anyone"
   on public.tier_lists for select
-  using (visibility = 'public');
+  using (visibility in ('public', 'shared'));
 
 -- keep updated_at fresh
 create or replace function public.touch_updated_at()

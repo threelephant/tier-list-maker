@@ -331,7 +331,8 @@
   .header-spacer { flex: 1 1 auto; }
 
   /* ---------- Menu ---------- */
-  #menuGrid {
+  #menuGrid { display: block; }
+  .section-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 16px;
@@ -408,20 +409,34 @@
   .menu-empty h2 { color: var(--text); margin: 12px 0 6px; }
   .menu-empty p { margin: 0 0 18px; }
 
-  /* ---------- Auth + sharing ---------- */
-  .auth-area { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-  .user-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-  .user-chip img { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); object-fit: cover; }
-  .user-chip b { color: var(--text); font-weight: 600; }
-
-  .vis-badge {
-    flex: 0 0 auto;
-    font-size: 11px; font-weight: 700;
-    padding: 3px 9px; border-radius: 999px;
-    border: 1px solid var(--line); color: var(--muted);
+  /* ---------- Auth (avatar + menu) ---------- */
+  .auth-area { display: flex; align-items: center; gap: 8px; margin-left: auto; position: relative; }
+  .avatar-btn {
+    width: 32px; height: 32px; padding: 0; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--text); font-weight: 700; font-size: 13px;
+    cursor: pointer; overflow: hidden; display: grid; place-items: center;
   }
-  .vis-badge.pub { color: #8fe6b0; border-color: #2f6b48; background: rgba(60,180,120,.12); }
+  .avatar-btn img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .avatar-btn:hover { border-color: var(--accent); }
+  .user-menu {
+    position: absolute; top: 42px; right: 0;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.5);
+    padding: 12px; min-width: 210px; z-index: 60;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .user-menu .who { font-size: 12px; color: var(--muted); word-break: break-word; }
+  .user-menu .who b { color: var(--text); display: block; font-size: 14px; }
 
+  /* ---------- Sharing ---------- */
+  .vis-select {
+    flex: 0 0 auto;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 9px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .vis-select:focus { outline: none; border-color: var(--accent); }
   .ro-banner {
     display: flex; align-items: center; justify-content: center; gap: 12px;
     background: rgba(110,168,254,.10);
@@ -430,6 +445,44 @@
     padding: 9px 14px;
   }
   .btn.small { padding: 5px 10px; font-size: 12px; }
+
+  /* ---------- Menu sections ---------- */
+  .menu-section-title {
+    font-size: 12px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+    color: var(--muted); margin: 22px 2px 10px;
+  }
+  .menu-section:first-child .menu-section-title { margin-top: 0; }
+
+  /* ---------- Add tile + uploading spinner ---------- */
+  .card.add-tile {
+    border: 2px dashed var(--line); background: transparent; box-shadow: none;
+    display: grid; place-items: center; cursor: pointer;
+    height: calc(var(--cell) + 23px); color: var(--muted);
+  }
+  .card.add-tile:hover { border-color: var(--accent); color: var(--text); transform: translateY(-2px); box-shadow: none; }
+  .add-tile .plus { font-size: 30px; line-height: 1; font-weight: 300; }
+  .card.uploading::after {
+    content: ""; position: absolute; top: 6px; left: 6px;
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Danger zone ---------- */
+  .danger-zone { text-align: center; margin: 26px 0 10px; }
+  .link-danger {
+    background: none; border: none; color: var(--muted);
+    font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+  }
+  .link-danger:hover { color: var(--danger); }
+
+  /* ---------- Sync progress ---------- */
+  .sync-modal { max-width: 360px; }
+  .sync-title { margin: 0 0 12px; font-size: 16px; }
+  .sync-label { font-size: 13px; color: var(--muted); margin-bottom: 10px; min-height: 18px; }
+  .progress-track { height: 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .progress-bar { height: 100%; width: 0%; background: var(--accent); transition: width .2s ease; }
 </style>
 </head>
 <body>
@@ -457,14 +510,16 @@
     <header>
       <button class="btn ghost back-btn" id="backBtn" title="All lists">← Lists</button>
       <input id="boardName" class="board-name" maxlength="80" placeholder="Untitled list" aria-label="List name" />
-      <span class="vis-badge" id="visibilityBadge" hidden></span>
       <span class="header-spacer"></span>
-      <button class="btn" id="visibilityBtn" hidden>Make public</button>
+      <select id="visibilitySelect" class="vis-select" hidden title="Who can see this list" aria-label="List visibility">
+        <option value="private">🔒 Private</option>
+        <option value="public">🌐 Public</option>
+        <option value="shared">🔗 Shared (link only)</option>
+      </select>
       <button class="btn" id="shareBtn" hidden>Share</button>
-      <button class="btn primary" id="addItemBtn">+ Add items</button>
       <button class="btn" id="exportPngBtn">Export PNG</button>
       <button class="btn" id="exportJsonBtn">Export JSON</button>
-      <button class="btn danger ghost" id="resetBtn">Reset</button>
+      <button class="btn danger ghost" id="resetBtn" title="Move all items back to Unranked">Reset</button>
     </header>
 
     <div class="ro-banner" id="roBanner" hidden>
@@ -480,7 +535,22 @@
         <div class="pool-head">Unranked</div>
         <div class="dropzone" id="pool" data-container="pool"></div>
       </section>
+
+      <div class="danger-zone" id="dangerZone" hidden>
+        <button class="link-danger" id="removeAllBtn">Remove all items…</button>
+      </div>
     </main>
+  </div>
+
+  <!-- Sync progress -->
+  <div class="overlay" id="syncOverlay">
+    <div class="modal sync-modal">
+      <div class="modal-body">
+        <h3 class="sync-title">Uploading your lists…</h3>
+        <div class="sync-label" id="syncLabel">Preparing…</div>
+        <div class="progress-track"><div class="progress-bar" id="syncBar"></div></div>
+      </div>
+    </div>
   </div>
 
   <!-- Item editor -->
@@ -582,34 +652,61 @@ function setUserFromSession(session) {
     currentUser = null;
   }
 }
+function initials(s) {
+  return (s || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+}
+
 function renderAuth() {
   const el = byId("authArea");
   el.innerHTML = "";
-  if (currentUser) {
-    const chip = document.createElement("div");
-    chip.className = "user-chip";
-    if (currentUser.avatar) {
-      const img = document.createElement("img");
-      img.src = currentUser.avatar; img.alt = "";
-      img.referrerPolicy = "no-referrer";
-      chip.appendChild(img);
-    }
-    const nm = document.createElement("span");
-    nm.append("Signed in as ");
-    const b = document.createElement("b");
-    b.textContent = currentUser.name || currentUser.email || "you";
-    nm.appendChild(b);
-    chip.appendChild(nm);
-    const out = document.createElement("button");
-    out.className = "btn ghost"; out.textContent = "Sign out";
-    out.addEventListener("click", signOutUser);
-    el.append(chip, out);
-  } else {
+  if (!currentUser) {
     const inb = document.createElement("button");
     inb.className = "btn"; inb.textContent = "Sign in with Google";
     inb.addEventListener("click", signInWithGoogle);
     el.appendChild(inb);
+    return;
   }
+
+  const name = currentUser.name || currentUser.email || "you";
+
+  // Avatar-only button; name on hover; click → popover menu.
+  const avatar = document.createElement("button");
+  avatar.className = "avatar-btn";
+  avatar.title = name;
+  if (currentUser.avatar) {
+    const img = document.createElement("img");
+    img.src = currentUser.avatar; img.alt = name; img.referrerPolicy = "no-referrer";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = initials(name);
+  }
+  avatar.addEventListener("click", (e) => { e.stopPropagation(); toggleUserMenu(); });
+  el.appendChild(avatar);
+}
+
+function closeUserMenu() {
+  const m = document.querySelector(".user-menu");
+  if (m) m.remove();
+  document.removeEventListener("click", closeUserMenu);
+}
+
+function toggleUserMenu() {
+  if (document.querySelector(".user-menu")) { closeUserMenu(); return; }
+  const menu = document.createElement("div");
+  menu.className = "user-menu";
+  const who = document.createElement("div");
+  who.className = "who";
+  const b = document.createElement("b");
+  b.textContent = currentUser.name || "Signed in";
+  who.appendChild(b);
+  if (currentUser.email) who.append(currentUser.email);
+  const out = document.createElement("button");
+  out.className = "btn ghost"; out.textContent = "Sign out";
+  out.addEventListener("click", signOutUser);
+  menu.append(who, out);
+  menu.addEventListener("click", (e) => e.stopPropagation());
+  byId("authArea").appendChild(menu);
+  setTimeout(() => document.addEventListener("click", closeUserMenu), 0);
 }
 
 /* ============================================================
@@ -718,7 +815,15 @@ function rowToBoard(row) {
     position: row.position || 0,
   };
 }
-const boardData = (b) => ({ tiers: b.tiers, pool: b.pool, items: b.items });
+function boardData(b) {
+  // Strip the transient `uploading` flag so it never lands in storage.
+  const items = {};
+  for (const [k, v] of Object.entries(b.items || {})) {
+    if (v && v.uploading) { const { uploading, ...rest } = v; items[k] = rest; }
+    else items[k] = v;
+  }
+  return { tiers: b.tiers, pool: b.pool, items };
+}
 
 // Fetch any list by id that the viewer is allowed to read (own or public). RLS enforces access.
 async function cloudFetchOne(id) {
@@ -945,22 +1050,14 @@ function renameBoard(id, name) {
 /* ---- read-only vs editable UI + sharing (cloud, owner only) ---- */
 function applyEditableUI() {
   const cloudOwner = canEdit && backend.mode === "cloud" && !!(state && state.owner);
-  byId("addItemBtn").hidden = !canEdit;
   byId("addTierBtn").hidden = !canEdit;
   byId("resetBtn").hidden = !canEdit;
+  byId("dangerZone").hidden = !canEdit;
   boardNameInput.readOnly = !canEdit;
   byId("shareBtn").hidden = !cloudOwner;
-  const visBtn = byId("visibilityBtn");
-  visBtn.hidden = !cloudOwner;
-  if (cloudOwner) visBtn.textContent = state.visibility === "public" ? "Make private" : "Make public";
-  const badge = byId("visibilityBadge");
-  if (backend.mode === "cloud" && state && state.owner) {
-    badge.hidden = false;
-    badge.textContent = state.visibility === "public" ? "● Public" : "● Private";
-    badge.className = "vis-badge " + (state.visibility === "public" ? "pub" : "priv");
-  } else {
-    badge.hidden = true;
-  }
+  const sel = byId("visibilitySelect");
+  sel.hidden = !cloudOwner;
+  if (cloudOwner) sel.value = state.visibility || "private";
   byId("roBanner").hidden = canEdit;
   byId("roDup").textContent = currentUser ? "Duplicate to my lists" : "Sign in to save a copy";
 }
@@ -974,15 +1071,18 @@ async function setVisibility(v) {
   if (i >= 0) boardsCache[i] = state;
   await backend.save(state);
   applyEditableUI();
-  toast(v === "public" ? "Anyone with the link can view" : "List is now private");
+  const msg = v === "public" ? "Public — listed on your home + shareable by link"
+            : v === "shared" ? "Shared — link-only (not shown on your home)"
+            : "Private — only you can see this";
+  toast(msg);
 }
 
 async function shareCurrent() {
   if (!state) return;
   if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
-  if (state.visibility !== "public") {
-    if (!confirm("Make this list public so anyone with the link can view it?")) return;
-    await setVisibility("public");
+  if (state.visibility === "private") {
+    if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view (it won't appear on your home).")) return;
+    await setVisibility("shared");
   }
   const link = shareLink();
   try { await navigator.clipboard.writeText(link); toast("Share link copied"); }
@@ -1021,8 +1121,14 @@ async function maybeOfferSync() {
     await dbPut("app", true, flagKey);
     return;
   }
-  toast("Uploading local lists…");
+  const overlay = byId("syncOverlay");
+  const bar = byId("syncBar");
+  const label = byId("syncLabel");
+  bar.style.width = "0%";
+  overlay.classList.add("show");
+  let done = 0;
   for (const lb of localBoards) {
+    label.textContent = `Uploading “${lb.name || "Untitled list"}” — ${done + 1} of ${n}`;
     try {
       const board = JSON.parse(JSON.stringify(lb));
       await rehostImagesToStorage(board);
@@ -1034,9 +1140,12 @@ async function maybeOfferSync() {
         position: pos,
       });
     } catch (e) { console.warn("sync failed for a board", e); }
+    done++;
+    bar.style.width = Math.round((done / n) * 100) + "%";
   }
   await dbPut("app", true, flagKey);
   await cloudBackend.load();
+  overlay.classList.remove("show");
   renderMenu();
   toast("Local lists uploaded to your account");
 }
@@ -1052,12 +1161,43 @@ function timeAgo(ts) {
   return Math.floor(mo / 12) + "y ago";
 }
 
+function sectionGrid(boards) {
+  const grid = document.createElement("div");
+  grid.className = "section-grid";
+  boards.forEach((b) => grid.appendChild(renderListCard(b)));
+  return grid;
+}
+
+function appendSection(title, boards) {
+  if (!boards.length) return;
+  const sec = document.createElement("div");
+  sec.className = "menu-section";
+  const h = document.createElement("div");
+  h.className = "menu-section-title";
+  h.textContent = `${title} · ${boards.length}`;
+  sec.append(h, sectionGrid(boards));
+  menuGrid.appendChild(sec);
+}
+
 function renderMenu() {
   const boards = orderedBoards();
   menuGrid.innerHTML = "";
-  menuEmpty.hidden = boards.length > 0;
-  menuGrid.hidden = boards.length === 0;
-  boards.forEach((b) => menuGrid.appendChild(renderListCard(b)));
+
+  if (backend.mode === "cloud") {
+    // Sections: Private + Public. 'shared' lists are link-only (excluded from home).
+    const priv = boards.filter((b) => (b.visibility || "private") === "private");
+    const pub = boards.filter((b) => b.visibility === "public");
+    const shown = priv.length + pub.length;
+    menuEmpty.hidden = shown > 0;
+    menuGrid.hidden = shown === 0;
+    appendSection("Private", priv);
+    appendSection("Public", pub);
+  } else {
+    // Local mode: one flat grid.
+    menuEmpty.hidden = boards.length > 0;
+    menuGrid.hidden = boards.length === 0;
+    if (boards.length) menuGrid.appendChild(sectionGrid(boards));
+  }
 }
 
 function menuIconBtn(label, title, cls, onClick) {
@@ -1253,39 +1393,66 @@ function deleteItem(id) {
 }
 
 // Create item(s) from image files; append to a container (default pool).
+// Upload a blob to Storage and resolve with its public URL.
+function uploadBlobToStorage(boardId, itemId, blob) {
+  const path = `${currentUser.id}/${boardId}/${itemId}.png`;
+  return sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true })
+    .then((up) => {
+      if (up.error) throw up.error;
+      return sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+    });
+}
+
+// Optimistic add: show the downscaled image instantly (data URL), then in cloud mode
+// upload to Storage in the background and swap in the public URL.
+async function addItemFromBlob(srcBlob, name, containerKey, index) {
+  let small;
+  try { small = await toDownscaledBlob(srcBlob); }
+  catch (e) { toast("Couldn't read an image", "err"); return; }
+  const id = uid();
+  const item = { id, name: name || ("Item " + (++itemCounter)), description: "", image: small.dataURL };
+  const cloud = backend.mode === "cloud";
+  if (cloud) item.uploading = true;
+  state.items[id] = item;
+  const target = getArray(containerKey) || state.pool;
+  if (index == null || index > target.length) target.push(id);
+  else target.splice(index, 0, id);
+  render();
+
+  if (!cloud) { persist(); return; }
+
+  const board = state; // capture so navigation can't misfile the upload
+  uploadBlobToStorage(board.id, id, small.blob).then((url) => {
+    const it = board.items[id];
+    if (!it) return; // deleted meanwhile
+    it.image = url;
+    delete it.uploading;
+    if (state === board) render();
+    backend.save(board);
+  }).catch(() => {
+    const it = board.items[id];
+    if (it) delete it.uploading;
+    if (state === board) render();
+    backend.save(board); // keep the data URL as a fallback
+    toast("Image upload failed — kept a local copy", "err");
+  });
+}
+
 async function addImagesFromFiles(files, containerKey = "pool", startIndex = null) {
   const images = [...files].filter((f) => f.type.startsWith("image/"));
   if (!images.length) return;
-  const target = getArray(containerKey) || state.pool;
-  let idx = startIndex == null ? target.length : startIndex;
+  let idx = startIndex;
   for (const file of images) {
-    try {
-      const id = uid();
-      const image = await backend.processImage(file, id);
-      const name = (file.name || "").replace(/\.[^.]+$/, "") || ("Item " + (++itemCounter));
-      state.items[id] = { id, name, description: "", image };
-      target.splice(idx++, 0, id);
-    } catch (e) {
-      toast("Couldn't add an image", "err");
-    }
+    const name = (file.name || "").replace(/\.[^.]+$/, "") || null;
+    await addItemFromBlob(file, name, containerKey, idx);
+    if (idx != null) idx++;
   }
-  render();
-  persist();
   toast(images.length + " item" + (images.length > 1 ? "s" : "") + " added");
 }
 
 async function addImageFromBlob(blob, containerKey = "pool") {
-  try {
-    const id = uid();
-    const image = await backend.processImage(blob, id);
-    state.items[id] = { id, name: "Item " + (++itemCounter), description: "", image };
-    (getArray(containerKey) || state.pool).push(id);
-    render();
-    persist();
-    toast("Item added — click it to rename");
-  } catch (e) {
-    toast("Couldn't add pasted image", "err");
-  }
+  await addItemFromBlob(blob, null, containerKey, null);
+  toast("Item added — click it to rename");
 }
 
 /* ============================================================
@@ -1366,18 +1533,34 @@ function render() {
   // Pool
   poolEl.innerHTML = "";
   poolEl.dataset.container = "pool";
-  if (state.pool.length === 0) {
-    if (canEdit) {
+  state.pool.forEach((id) => poolEl.appendChild(renderCard(id)));
+  if (canEdit) {
+    if (state.pool.length === 0) {
       const hint = document.createElement("div");
       hint.className = "hint";
       hint.innerHTML =
-        'Paste an image with <kbd>⌘V</kbd> / <kbd>Ctrl V</kbd>, drag image files here, or use <b>+ Add items</b>.';
+        'Paste with <kbd>⌘V</kbd> / <kbd>Ctrl V</kbd>, drag image files here, or click <b>＋</b> →';
       poolEl.appendChild(hint);
     }
-  } else {
-    state.pool.forEach((id) => poolEl.appendChild(renderCard(id)));
+    poolEl.appendChild(makeAddTile());
   }
   wireDropzone(poolEl);
+}
+
+// The "+" placeholder tile that opens the file picker (lives at the end of Unranked).
+function makeAddTile() {
+  const tile = document.createElement("div");
+  tile.className = "card add-tile";
+  tile.title = "Add items";
+  const plus = document.createElement("div");
+  plus.className = "plus";
+  plus.textContent = "+";
+  tile.appendChild(plus);
+  tile.addEventListener("click", async () => {
+    const files = await pickFiles("image/*", true);
+    if (files.length) addImagesFromFiles(files, "pool");
+  });
+  return tile;
 }
 
 function ctrlBtn(label, title, onClick) {
@@ -1391,7 +1574,7 @@ function ctrlBtn(label, title, onClick) {
 function renderCard(id) {
   const item = state.items[id];
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "card" + (item.uploading ? " uploading" : "");
   card.dataset.id = id;
   if (item.description) card.title = item.description;
 
@@ -1609,17 +1792,37 @@ document.getElementById("editReplace").addEventListener("click", async () => {
   if (!editingId) return;
   const files = await pickFiles("image/*", false);
   if (!files.length) return;
-  try {
-    const image = await backend.processImage(files[0], editingId);
-    state.items[editingId].image = image;
-    editPreview.src = image;
-    persist();
-  } catch (e) {
-    toast("Couldn't read image", "err");
-  }
+  const id = editingId;
+  let small;
+  try { small = await toDownscaledBlob(files[0]); }
+  catch (e) { toast("Couldn't read image", "err"); return; }
+  const item = state.items[id];
+  if (!item) return;
+  item.image = small.dataURL;
+  editPreview.src = small.dataURL;
+  if (backend.mode !== "cloud") { render(); persist(); return; }
+  item.uploading = true;
+  render();
+  const board = state;
+  uploadBlobToStorage(board.id, id, small.blob).then((url) => {
+    const it = board.items[id]; if (!it) return;
+    it.image = url; delete it.uploading;
+    if (state === board) render();
+    if (editingId === id) editPreview.src = url;
+    backend.save(board);
+  }).catch(() => {
+    const it = board.items[id]; if (it) delete it.uploading;
+    if (state === board) render();
+    backend.save(board);
+    toast("Image upload failed — kept a local copy", "err");
+  });
 });
 editorOverlay.addEventListener("mousedown", (e) => { if (e.target === editorOverlay) closeEditor(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && editorOverlay.classList.contains("show")) closeEditor(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (editorOverlay.classList.contains("show")) closeEditor();
+  closeUserMenu();
+});
 
 /* ============================================================
    Export PNG (native canvas)
@@ -1825,30 +2028,37 @@ window.addEventListener("drop", (e) => {
 
 // Board toolbar
 document.getElementById("backBtn").addEventListener("click", goMenu);
-document.getElementById("addItemBtn").addEventListener("click", async () => {
-  const files = await pickFiles("image/*", true);
-  if (files.length) addImagesFromFiles(files, "pool");
-});
 document.getElementById("addTierBtn").addEventListener("click", addTier);
 document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
 document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
+// Reset = move every ranked item back to Unranked (keeps tiers + items).
 document.getElementById("resetBtn").addEventListener("click", () => {
   if (!state || !canEdit) return;
-  if (!confirm("Reset this board to default tiers and remove all items?")) return;
-  state.tiers = defaultTiers();
-  state.pool = [];
+  const moved = [];
+  state.tiers.forEach((t) => { moved.push(...t.items); t.items = []; });
+  if (!moved.length) { toast("Nothing to un-rank"); return; }
+  state.pool.push(...moved);
+  render();
+  persist();
+  toast("All items moved to Unranked");
+});
+document.getElementById("shareBtn").addEventListener("click", shareCurrent);
+document.getElementById("visibilitySelect").addEventListener("change", (e) => setVisibility(e.target.value));
+document.getElementById("roDup").addEventListener("click", duplicateOpenToMyLists);
+// Remove all = delete every item (de-emphasized, strong confirm; keeps tiers).
+document.getElementById("removeAllBtn").addEventListener("click", () => {
+  if (!state || !canEdit) return;
+  const n = Object.keys(state.items).length;
+  if (!n) { toast("No items to remove"); return; }
+  if (!confirm(`Permanently remove all ${n} item${n > 1 ? "s" : ""} from this list? This can't be undone.`)) return;
   state.items = {};
+  state.tiers.forEach((t) => { t.items = []; });
+  state.pool = [];
   itemCounter = 0;
   render();
   persist();
-  toast("Board reset");
+  toast("All items removed");
 });
-document.getElementById("shareBtn").addEventListener("click", shareCurrent);
-document.getElementById("visibilityBtn").addEventListener("click", () => {
-  if (!state) return;
-  setVisibility(state.visibility === "public" ? "private" : "public");
-});
-document.getElementById("roDup").addEventListener("click", duplicateOpenToMyLists);
 
 // Editable board name
 boardNameInput.addEventListener("change", () => {
