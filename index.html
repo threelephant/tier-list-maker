@@ -232,9 +232,24 @@
     cursor: grab;
     box-shadow: var(--shadow);
     transition: transform .08s, box-shadow .08s;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
   .card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.45); }
   .card.dragging { opacity: .4; cursor: grabbing; }
+  /* Floating clone that follows the finger during a touch drag */
+  .card.drag-ghost {
+    position: fixed;
+    z-index: 1000;
+    margin: 0;
+    pointer-events: none;
+    opacity: .92;
+    transform: scale(1.06);
+    box-shadow: 0 14px 34px rgba(0,0,0,.6);
+    transition: none;
+  }
+  .card.drag-ghost:hover { transform: scale(1.06); }
   .card img {
     display: block;
     width: 100%;
@@ -1623,7 +1638,11 @@ function renderCard(id) {
   });
   card.appendChild(del);
 
-  card.addEventListener("click", () => openEditor(id));
+  card.addEventListener("click", () => {
+    if (Date.now() - lastDropTime < 400) return; // ignore the click synthesized after a touch-drag
+    openEditor(id);
+  });
+  // Mouse drag-and-drop (HTML5 DnD — desktop)
   card.addEventListener("dragstart", (e) => {
     draggedId = id;
     e.dataTransfer.setData("application/x-tier-item", id);
@@ -1631,6 +1650,8 @@ function renderCard(id) {
     card.classList.add("dragging");
   });
   card.addEventListener("dragend", clearDragState);
+  // Touch drag-and-drop (long-press to pick up — mobile)
+  card.addEventListener("touchstart", (e) => cardTouchStart(e, id, card), { passive: true });
 
   return card;
 }
@@ -1651,7 +1672,7 @@ function clearDragState() {
 
 // Element (real card) the placeholder should be inserted before, or null to append.
 function insertBeforeTarget(zone, x, y) {
-  const cards = [...zone.querySelectorAll(".card:not(.dragging):not(.placeholder)")];
+  const cards = [...zone.querySelectorAll(".card:not(.dragging):not(.placeholder):not(.add-tile)")];
   for (const c of cards) {
     const r = c.getBoundingClientRect();
     if (y >= r.top && y <= r.bottom && x < r.left + r.width / 2) return c;
@@ -1710,9 +1731,117 @@ function indexOfPlaceholder(zone) {
   let i = 0;
   for (const child of zone.children) {
     if (child === placeholder) break;
-    if (child.classList.contains("card")) i++;
+    if (child.classList.contains("card") && !child.classList.contains("add-tile")) i++;
   }
   return i;
+}
+
+/* ============================================================
+   Touch drag-and-drop (mobile) — long-press to pick up, then drag.
+   HTML5 DnD doesn't fire from touch, so this drives the same
+   placeholder/insertBeforeTarget/moveItem logic from touch events.
+   ============================================================ */
+let touchDrag = null;  // { id, card, startX, startY, offX, offY, dragging, ghost, timer }
+let lastDropTime = 0;  // suppress the click synthesized right after a touch-drop
+
+function zoneFromPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  return el.closest(".dropzone")
+    || (el.closest(".tier") && el.closest(".tier").querySelector(".dropzone"))
+    || (el.closest(".pool") && poolEl)
+    || null;
+}
+
+function cardTouchStart(e, id, card) {
+  if (!canEdit || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  touchDrag = { id, card, startX: t.clientX, startY: t.clientY, dragging: false, ghost: null,
+    timer: setTimeout(beginTouchDrag, 250) };
+  document.addEventListener("touchmove", onTouchMove, { passive: false });
+  document.addEventListener("touchend", onTouchEnd);
+  document.addEventListener("touchcancel", endTouch);
+}
+
+function beginTouchDrag() {
+  if (!touchDrag) return;
+  const { card, startX, startY, id } = touchDrag;
+  touchDrag.dragging = true;
+  draggedId = id;
+  if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+  const r = card.getBoundingClientRect();
+  touchDrag.offX = startX - r.left;
+  touchDrag.offY = startY - r.top;
+  const ghost = card.cloneNode(true);
+  ghost.classList.add("drag-ghost");
+  ghost.querySelectorAll(".del").forEach((d) => d.remove());
+  ghost.style.width = r.width + "px";
+  ghost.style.height = r.height + "px";
+  document.body.appendChild(ghost);
+  touchDrag.ghost = ghost;
+  card.classList.add("dragging");
+  moveGhost(startX, startY);
+}
+
+function moveGhost(x, y) {
+  if (!touchDrag || !touchDrag.ghost) return;
+  touchDrag.ghost.style.left = (x - touchDrag.offX) + "px";
+  touchDrag.ghost.style.top = (y - touchDrag.offY) + "px";
+}
+
+function onTouchMove(e) {
+  if (!touchDrag) return;
+  const t = e.touches[0];
+  if (!touchDrag.dragging) {
+    // Finger moved before the long-press fired → treat as scroll/tap, not a drag.
+    if (Math.abs(t.clientX - touchDrag.startX) > 10 || Math.abs(t.clientY - touchDrag.startY) > 10) endTouch();
+    return;
+  }
+  e.preventDefault(); // we own the gesture now; stop the page from scrolling
+  moveGhost(t.clientX, t.clientY);
+  const m = 72; // edge auto-scroll so off-screen tiers are reachable
+  if (t.clientY < m) window.scrollBy(0, -14);
+  else if (t.clientY > window.innerHeight - m) window.scrollBy(0, 14);
+  document.querySelectorAll(".dropzone.drag-over").forEach((z) => z.classList.remove("drag-over"));
+  const zone = zoneFromPoint(t.clientX, t.clientY);
+  if (zone) {
+    const before = insertBeforeTarget(zone, t.clientX, t.clientY);
+    if (before) zone.insertBefore(placeholder, before); else zone.appendChild(placeholder);
+  } else {
+    placeholder.remove();
+  }
+}
+
+function onTouchEnd(e) {
+  if (!touchDrag) return;
+  if (touchDrag.dragging) {
+    e.preventDefault(); // cancel the synthetic click that would follow
+    lastDropTime = Date.now();
+    const id = touchDrag.id;
+    const zone = placeholder.parentNode;
+    const valid = zone && zone.classList && zone.classList.contains("dropzone");
+    const containerKey = valid ? zone.dataset.container : null;
+    const index = valid ? indexOfPlaceholder(zone) : -1;
+    endTouch();
+    if (valid) { moveItem(id, containerKey, index); render(); persist(); }
+    return;
+  }
+  endTouch();
+}
+
+function endTouch() {
+  if (touchDrag) {
+    clearTimeout(touchDrag.timer);
+    if (touchDrag.ghost) touchDrag.ghost.remove();
+    if (touchDrag.card) touchDrag.card.classList.remove("dragging");
+  }
+  touchDrag = null;
+  draggedId = null;
+  placeholder.remove();
+  document.querySelectorAll(".dropzone.drag-over").forEach((z) => z.classList.remove("drag-over"));
+  document.removeEventListener("touchmove", onTouchMove);
+  document.removeEventListener("touchend", onTouchEnd);
+  document.removeEventListener("touchcancel", endTouch);
 }
 
 /* ============================================================
