@@ -5,6 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#15161b" />
 <title>Tier List Maker</title>
+<meta name="description" content="Create classic S/A/B/C tier lists — drag in images, rank, and share." />
+<!-- Open Graph / link preview (static; the #/b/<id> fragment never reaches crawlers, so every shared link shows this card) -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Tier List Maker" />
+<meta property="og:title" content="Tier List Maker" />
+<meta property="og:description" content="Create classic S/A/B/C tier lists — drag in images, rank, and share." />
+<meta property="og:url" content="https://threelephant.github.io/tier-list-maker/" />
+<meta property="og:image" content="https://threelephant.github.io/tier-list-maker/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Tier List Maker" />
+<meta name="twitter:description" content="Create classic S/A/B/C tier lists — drag in images, rank, and share." />
+<meta name="twitter:image" content="https://threelephant.github.io/tier-list-maker/og.png" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%2315161b'/%3E%3Crect%20x='12'%20y='10'%20width='40'%20height='8'%20rx='4'%20fill='%23ff7f7f'/%3E%3Crect%20x='12'%20y='22'%20width='40'%20height='8'%20rx='4'%20fill='%23ffbf7f'/%3E%3Crect%20x='12'%20y='34'%20width='40'%20height='8'%20rx='4'%20fill='%23ffff7f'/%3E%3Crect%20x='12'%20y='46'%20width='40'%20height='8'%20rx='4'%20fill='%237fff7f'/%3E%3C/svg%3E" />
 <style>
   :root {
@@ -1077,95 +1091,6 @@ async function setVisibility(v) {
   toast(msg);
 }
 
-// Load images (with CORS so they don't taint the canvas). Returns a map src→Image (or null).
-function preloadImages(srcs) {
-  const uniq = [...new Set(srcs.filter(Boolean))];
-  const map = {};
-  return Promise.all(uniq.map((src) => new Promise((res) => {
-    const im = new Image();
-    im.crossOrigin = "anonymous";
-    im.onload = () => { map[src] = im; res(); };
-    im.onerror = () => { map[src] = null; res(); };
-    im.src = src;
-  }))).then(() => map);
-}
-
-// Render a 1200×630 social-preview image of a board (title + tier rows with thumbnails).
-async function renderShareImage(board) {
-  const W = 1200, H = 630, PAD = 52;
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#15161b"; ctx.fillRect(0, 0, W, H);
-
-  // Title + subtitle
-  ctx.textBaseline = "top"; ctx.textAlign = "left";
-  ctx.fillStyle = "#e9eaed";
-  ctx.font = "800 48px -apple-system, Segoe UI, Roboto, sans-serif";
-  ctx.fillText(fitText(ctx, board.name || "Tier List", W - 2 * PAD), PAD, 42);
-  const itemCount = Object.keys(board.items || {}).length;
-  ctx.fillStyle = "#9aa0ac";
-  ctx.font = "500 23px -apple-system, Segoe UI, Roboto, sans-serif";
-  ctx.fillText(`${itemCount} item${itemCount === 1 ? "" : "s"} · ${board.tiers.length} tiers · 🏆 Tier List Maker`, PAD, 108);
-
-  // Tier rows
-  const top = 168, bottom = H - 44, CHIP = 60, CELL = 60, RGAP = 12;
-  const maxRows = Math.max(1, Math.floor((bottom - top + RGAP) / (CHIP + RGAP)));
-  const tiers = board.tiers.slice(0, maxRows);
-  const need = tiers.flatMap((t) => t.items.slice(0, 14)).map((id) => board.items[id] && board.items[id].image);
-  const imgs = await preloadImages(need);
-
-  let y = top;
-  for (const t of tiers) {
-    ctx.fillStyle = t.color; roundRect(ctx, PAD, y, CHIP, CHIP, 12); ctx.fill();
-    ctx.fillStyle = contrastColor(t.color);
-    ctx.font = "800 28px -apple-system, Segoe UI, Roboto, sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText((t.name || "?").slice(0, 2), PAD + CHIP / 2, y + CHIP / 2);
-    ctx.textAlign = "left"; ctx.textBaseline = "top";
-
-    let x = PAD + CHIP + 16;
-    for (const id of t.items) {
-      if (x + CELL > W - PAD) break;
-      ctx.fillStyle = "#262934"; roundRect(ctx, x, y, CELL, CELL, 9); ctx.fill();
-      const im = imgs[board.items[id] && board.items[id].image];
-      if (im) { ctx.save(); roundRect(ctx, x, y, CELL, CELL, 9); ctx.clip(); drawCover(ctx, im, x, y, CELL, CELL); ctx.restore(); }
-      x += CELL + 9;
-    }
-    y += CHIP + RGAP;
-  }
-  return new Promise((r) => canvas.toBlob(r, "image/png"));
-}
-
-// The share-preview page is served by the Supabase Edge Function `share`
-// (Storage can't host active HTML — it's neutered to text/plain).
-function shareFnUrl(id) { return `${SUPABASE_URL}/functions/v1/share?id=${id}`; }
-
-let shareFnOk = null; // cached true once we confirm the function is deployed
-async function shareFnReachable(id) {
-  if (shareFnOk === true) return true;
-  try {
-    const r = await fetch(shareFnUrl(id), { method: "GET" });
-    if (r.ok) shareFnOk = true;
-    return r.ok;
-  } catch (e) { return false; }
-}
-
-// Render the board's preview image and upload it to Storage so the share page can embed it.
-async function uploadPreviewImage(board) {
-  try {
-    const imgBlob = await renderShareImage(board);
-    const imgPath = `${currentUser.id}/${board.id}/_preview.png`;
-    const up = await sb.storage.from("tier-images").upload(imgPath, imgBlob, { contentType: "image/png", upsert: true });
-    return !up.error;
-  } catch (e) { console.warn("preview upload failed", e); return false; }
-}
-
-async function copyLink(link, msg) {
-  try { await navigator.clipboard.writeText(link); toast(msg || "Share link copied"); }
-  catch (e) { prompt("Copy this share link:", link); }
-}
-
 async function shareCurrent() {
   if (!state) return;
   if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
@@ -1173,16 +1098,9 @@ async function shareCurrent() {
     if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view. It stays on your home under “Shared” but isn't publicly listed.")) return;
     await setVisibility("shared");
   }
-  toast("Building share preview…");
-  const board = state;
-  const reachable = await shareFnReachable(board.id);
-  if (!reachable) {
-    // Share function not deployed yet — copy the plain app link (no preview card).
-    copyLink(appLink(board.id), "Link copied (deploy the ‘share’ function to get preview cards)");
-    return;
-  }
-  await uploadPreviewImage(board); // refresh the preview image the card will show
-  copyLink(shareFnUrl(board.id), "Share link copied — preview shows when posted");
+  const link = appLink(state.id);
+  try { await navigator.clipboard.writeText(link); toast("Share link copied"); }
+  catch (e) { prompt("Copy this share link:", link); }
 }
 
 async function duplicateOpenToMyLists() {

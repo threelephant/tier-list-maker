@@ -5,7 +5,7 @@ A classic tier-list maker in a single, self-contained `index.html` — no backen
 **Live:** https://threelephant.github.io/tier-list-maker/
 
 ## Features
-- **Accounts + sharing (optional)** — sign in with Google to sync your lists to the cloud (Supabase); make any list **public** or **shared** and send the link (others see a read-only view). Shared links unfurl into a **preview card** (Open Graph image of the board) when posted to chat/social. Signed out, everything still works locally.
+- **Accounts + sharing (optional)** — sign in with Google to sync your lists to the cloud (Supabase); make any list **public** or **shared** and send the link (others see a read-only view). Links unfurl into a branded preview card when posted to chat/social. Signed out, everything still works locally.
 - **Multiple tier lists** — a menu home page to create, open, rename, duplicate, and delete lists, each with a live preview.
 - Add images by **paste** (`⌘V` / `Ctrl V`), **drag-and-drop** of image files, or the **+ Add items** button. Images are auto-downscaled to keep things fast.
 - Classic **S / A / B / C / D / F** tiers — rename, recolor (color picker), reorder, add, or delete (deleted tiers' items return to the *Unranked* tray, never lost).
@@ -17,7 +17,7 @@ A classic tier-list maker in a single, self-contained `index.html` — no backen
 ## Cloud setup (Supabase)
 Sign-in and sharing are backed by Supabase. To self-host: create a Supabase project, run [supabase/schema.sql](supabase/schema.sql) in the SQL Editor (creates the tables, RLS policies, and the `tier-images` Storage bucket), enable the Google auth provider, add your app URL to the allowed Redirect URLs, then set `SUPABASE_URL` / `SUPABASE_ANON_KEY` near the top of the `<script>` in `index.html`. The anon (publishable) key is safe to commit — row-level security is the access boundary.
 
-**Link previews** (the card shown when a share link is posted to chat/social) are served by the [`share` Edge Function](supabase/functions/share/index.ts), because Storage refuses to serve active HTML. Deploy it once and make it public (no JWT): in the Dashboard → Edge Functions, create a function named `share`, paste the file, and turn **Verify JWT off**; or via CLI: `supabase functions deploy share --no-verify-jwt`. Until it's deployed, Share copies a plain link (no preview card).
+**Link previews** are static Open Graph tags in `index.html` pointing at `og.png` — so any shared link unfurls into one branded card. (Per-list preview images aren't possible here: the app is hash-routed on a static host, so the `#/b/<id>` fragment never reaches a crawler, and Supabase neuters HTML on both Storage and Edge Functions — a per-list card would require hosting a tiny HTML endpoint on a third service like Cloudflare Workers or Deno Deploy.)
 
 ## Notes
 Signed out, lists live only in this browser (IndexedDB). To share without an account, use **Export JSON** (re-importable) or **Export PNG** (image). Signed in, lists sync to your account and public lists are shareable by link.
