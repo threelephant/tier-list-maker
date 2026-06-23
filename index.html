@@ -728,18 +728,24 @@ async function cloudFetchOne(id) {
   return { board: rowToBoard(data), canEdit: !!currentUser && data.owner === currentUser.id };
 }
 
-// Re-host any base64 (data:) images on a board into Storage, rewriting item.image to public URLs.
+// Copy a board's images into the current user's Storage folder, rewriting item.image to the
+// new public URLs. Handles base64 data: URLs (local boards) and foreign Storage URLs (duplicating
+// someone else's public list) — anything not already under this user's own folder.
 async function rehostImagesToStorage(board) {
   if (!sb || !currentUser) return;
+  const ownPrefix = `/tier-images/${currentUser.id}/`;
   for (const [itemId, it] of Object.entries(board.items || {})) {
-    if (typeof it.image === "string" && it.image.startsWith("data:")) {
-      try {
-        const blob = await (await fetch(it.image)).blob();
-        const path = `${currentUser.id}/${board.id}/${itemId}.png`;
-        const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
-        if (!up.error) it.image = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
-      } catch (e) { /* keep data URL as fallback */ }
-    }
+    const img = it.image;
+    if (typeof img !== "string") continue;
+    const isData = img.startsWith("data:");
+    const isForeign = /^https?:/.test(img) && !img.includes(ownPrefix);
+    if (!isData && !isForeign) continue;
+    try {
+      const blob = await (await fetch(img)).blob();
+      const path = `${currentUser.id}/${board.id}/${itemId}.png`;
+      const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
+      if (!up.error) it.image = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+    } catch (e) { /* keep original as fallback */ }
   }
 }
 
@@ -753,7 +759,7 @@ const localBackend = {
     boardsCache.forEach((b) => { if (!order.includes(b.id)) order.push(b.id); });
     await migrateIfNeeded();
   },
-  async save(b) { b.updatedAt = nowMs(); await lsPutBoard(b); await setOrderDB(); },
+  async save(b) { b.updatedAt = nowMs(); await lsPutBoard(b); await setOrderDB(); return true; },
   async remove(id) { await lsDeleteBoard(id); await setOrderDB(); },
   async fetchOne(id) {
     const local = boardsCache.find((b) => b.id === id) || (await dbGet("boards", id));
@@ -776,14 +782,15 @@ const cloudBackend = {
     order = boardsCache.map((b) => b.id);
   },
   async save(b) {
-    if (!sb || !currentUser) return;
+    if (!sb || !currentUser) return false;
     const pos = order.indexOf(b.id);
     const { error } = await sb.from("tier_lists").upsert({
       id: b.id, owner: currentUser.id, name: b.name,
       visibility: b.visibility || "private", data: boardData(b),
       position: pos < 0 ? 0 : pos,
     });
-    if (error) toast("Cloud save failed", "err");
+    if (error) { console.warn("cloud save failed", error); return false; }
+    return true;
   },
   async remove(id) {
     if (!sb || !currentUser) return;
@@ -805,6 +812,7 @@ const cloudBackend = {
 };
 
 let backend = localBackend;
+let pendingBoard = null; // the board awaiting a debounced save (captured so navigation can't swap it)
 
 // Debounced save of the currently-open board. Keeps the in-memory cache fresh immediately.
 function persist() {
@@ -813,8 +821,22 @@ function persist() {
   const i = boardsCache.findIndex((b) => b.id === state.id);
   if (i >= 0) boardsCache[i] = state; else boardsCache.push(state);
   if (!order.includes(state.id)) order.push(state.id);
+  pendingBoard = state;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { backend.save(state); }, 300);
+  saveTimer = setTimeout(flushSave, 300);
+}
+
+// Write any pending edit immediately (before navigating away / closing the tab),
+// using the captured board so it can't be clobbered by a state change.
+function flushSave() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (!pendingBoard) return;
+  const b = pendingBoard;
+  pendingBoard = null;
+  Promise.resolve(backend.save(b)).then((ok) => {
+    if (ok === false) toast("Couldn't sync to cloud — changes may not be saved", "err");
+  });
 }
 
 /* ============================================================
@@ -826,8 +848,8 @@ const menuGrid = document.getElementById("menuGrid");
 const menuEmpty = document.getElementById("menuEmpty");
 const boardNameInput = document.getElementById("boardName");
 
-function goMenu() { location.hash = "#/"; }
-function goBoard(id) { location.hash = "#/b/" + id; }
+function goMenu() { flushSave(); location.hash = "#/"; }
+function goBoard(id) { flushSave(); location.hash = "#/b/" + id; }
 
 async function route() {
   const m = location.hash.match(/^#\/b\/(.+)$/);
@@ -872,7 +894,13 @@ async function createBoard() {
   if (backend.mode === "cloud" && currentUser) { b.owner = currentUser.id; b.visibility = "private"; }
   boardsCache.push(b);
   order.push(b.id);
-  await backend.save(b);
+  const ok = await backend.save(b);
+  if (ok === false) {
+    boardsCache = boardsCache.filter((x) => x.id !== b.id);
+    order = order.filter((x) => x !== b.id);
+    toast("Couldn't create the list (cloud save failed)", "err");
+    return;
+  }
   goBoard(b.id);
   setTimeout(() => { if (canEdit) { boardNameInput.focus(); boardNameInput.select(); } }, 60);
 }
@@ -967,8 +995,16 @@ async function duplicateOpenToMyLists() {
   copy.id = uid(); copy.owner = currentUser.id; copy.visibility = "private";
   copy.name = state.name + " (copy)";
   copy.createdAt = nowMs(); copy.updatedAt = nowMs();
+  toast("Saving a copy…");
+  await rehostImagesToStorage(copy); // copy images into my own Storage folder
   boardsCache.push(copy); order.push(copy.id);
-  await cloudBackend.save(copy);
+  const ok = await cloudBackend.save(copy);
+  if (ok === false) {
+    boardsCache = boardsCache.filter((x) => x.id !== copy.id);
+    order = order.filter((x) => x !== copy.id);
+    toast("Couldn't save a copy", "err");
+    return;
+  }
   toast("Saved to your lists");
   goBoard(copy.id);
 }
@@ -990,7 +1026,7 @@ async function maybeOfferSync() {
     try {
       const board = JSON.parse(JSON.stringify(lb));
       await rehostImagesToStorage(board);
-      const pos = order.length;
+      const pos = order.length + localBoards.indexOf(lb); // distinct, increasing positions
       await sb.from("tier_lists").insert({
         id: board.id, owner: currentUser.id, name: board.name || "Untitled list",
         visibility: "private",
@@ -1738,7 +1774,13 @@ async function importList() {
     }
     boardsCache.push(board);
     order.push(board.id);
-    await backend.save(board);
+    const ok = await backend.save(board);
+    if (ok === false) {
+      boardsCache = boardsCache.filter((x) => x.id !== board.id);
+      order = order.filter((x) => x !== board.id);
+      toast("Import failed — couldn't save to cloud", "err");
+      return;
+    }
     toast("List imported");
     goBoard(board.id);
   } catch (e) {
@@ -1834,8 +1876,20 @@ document.getElementById("importListBtn").addEventListener("click", importList);
       const { data } = await sb.auth.getSession();
       setUserFromSession(data.session);
     } catch (e) { console.warn("getSession failed", e); }
-    sb.auth.onAuthStateChange((_event, session) => { setUserFromSession(session); });
+    sb.auth.onAuthStateChange(async (_event, session) => {
+      const prevId = currentUser && currentUser.id;
+      setUserFromSession(session);
+      const nextId = currentUser && currentUser.id;
+      if (prevId === nextId) return; // ignore token refreshes (same user)
+      // Real sign-in/out (e.g. from another tab): resync backend, data, and UI.
+      backend = currentUser ? cloudBackend : localBackend;
+      await backend.load();
+      renderAuth();
+      await route();
+    });
   }
+  // Flush any pending edit before the tab closes / reloads.
+  window.addEventListener("beforeunload", flushSave);
   // Clean a leftover OAuth token/error hash from the URL.
   if (/(access_token|error)=/.test(location.hash)) history.replaceState(null, "", location.pathname);
 
