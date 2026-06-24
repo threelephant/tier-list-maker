@@ -351,6 +351,9 @@
   .modal-actions { display: flex; flex-direction: column; gap: 8px; padding: 0 18px 18px; }
   .modal-actions .row { display: flex; gap: 8px; }
   .modal-actions .spacer { flex: 1; }
+  .confirm-msg { margin: 0; font-size: 14px; color: var(--text); line-height: 1.45; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+  .checkbox-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; margin: 0; }
 
   /* ---------- Toasts ---------- */
   #toasts {
@@ -578,6 +581,7 @@
       <button class="btn" id="exportPngBtn">Export PNG</button>
       <button class="btn" id="exportJsonBtn">Export JSON</button>
       <button class="btn danger ghost" id="resetBtn" title="Move all items back to Unranked">Reset</button>
+      <div class="auth-area" data-avatar-only></div>
     </header>
 
     <div class="ro-banner" id="roBanner" hidden>
@@ -730,32 +734,36 @@ function colorFromString(s) {
   return `hsl(${h}, 46%, 42%)`;
 }
 
+// Render the avatar/sign-in into every .auth-area (the menu header and the board header).
+// Areas marked data-avatar-only stay empty when signed out (the board header is already busy).
 function renderAuth() {
-  const el = byId("authArea");
-  el.innerHTML = "";
-  if (!currentUser) {
-    const inb = document.createElement("button");
-    inb.className = "btn"; inb.textContent = "Sign in with Google";
-    inb.addEventListener("click", signInWithGoogle);
-    el.appendChild(inb);
-    return;
-  }
+  document.querySelectorAll(".auth-area").forEach((el) => {
+    el.innerHTML = "";
+    if (!currentUser) {
+      if (el.hasAttribute("data-avatar-only")) return;
+      const inb = document.createElement("button");
+      inb.className = "btn"; inb.textContent = "Sign in with Google";
+      inb.addEventListener("click", signInWithGoogle);
+      el.appendChild(inb);
+      return;
+    }
 
-  const name = currentUser.name || currentUser.email || "you";
+    const name = currentUser.name || currentUser.email || "you";
 
-  // Avatar-only button; name on hover; click → popover menu.
-  const avatar = document.createElement("button");
-  avatar.className = "avatar-btn";
-  avatar.title = name;
-  if (currentUser.avatar) {
-    const img = document.createElement("img");
-    img.src = currentUser.avatar; img.alt = name; img.referrerPolicy = "no-referrer";
-    avatar.appendChild(img);
-  } else {
-    avatar.textContent = initials(name);
-  }
-  avatar.addEventListener("click", (e) => { e.stopPropagation(); toggleUserMenu(); });
-  el.appendChild(avatar);
+    // Avatar-only button; name on hover; click → popover menu (anchored to this area).
+    const avatar = document.createElement("button");
+    avatar.className = "avatar-btn";
+    avatar.title = name;
+    if (currentUser.avatar) {
+      const img = document.createElement("img");
+      img.src = currentUser.avatar; img.alt = name; img.referrerPolicy = "no-referrer";
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = initials(name);
+    }
+    avatar.addEventListener("click", (e) => { e.stopPropagation(); toggleUserMenu(el); });
+    el.appendChild(avatar);
+  });
 }
 
 function closeUserMenu() {
@@ -764,8 +772,9 @@ function closeUserMenu() {
   document.removeEventListener("click", closeUserMenu);
 }
 
-function toggleUserMenu() {
+function toggleUserMenu(container) {
   if (document.querySelector(".user-menu")) { closeUserMenu(); return; }
+  container = container || byId("authArea");
   const menu = document.createElement("div");
   menu.className = "user-menu";
   const who = document.createElement("div");
@@ -779,7 +788,7 @@ function toggleUserMenu() {
   out.addEventListener("click", signOutUser);
   menu.append(who, out);
   menu.addEventListener("click", (e) => e.stopPropagation());
-  byId("authArea").appendChild(menu);
+  container.appendChild(menu);
   setTimeout(() => document.addEventListener("click", closeUserMenu), 0);
 }
 
@@ -949,6 +958,74 @@ function setProgress(frac, label) {
   if (label != null) byId("syncLabel").textContent = label;
 }
 function closeProgress() { byId("syncOverlay").classList.remove("show"); }
+
+// Small localStorage-backed UI prefs (e.g. "don't ask again"); degrade quietly if blocked.
+function prefGet(key) { try { return localStorage.getItem(key) === "1"; } catch (e) { return false; } }
+function prefSet(key, on) { try { on ? localStorage.setItem(key, "1") : localStorage.removeItem(key); } catch (e) {} }
+
+// Promise<boolean> confirm dialog built on the .overlay/.modal styles. opts:
+//   { title, message, confirmText, confirmClass, dontAskKey }
+// If dontAskKey is set and previously chosen, resolves true immediately (no dialog).
+function confirmModal(opts) {
+  const o = opts || {};
+  const dontAskKey = o.dontAskKey || null;
+  if (dontAskKey && prefGet(dontAskKey)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "overlay show";
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    const body = document.createElement("div");
+    body.className = "modal-body";
+    const h = document.createElement("h3");
+    h.className = "sync-title"; h.textContent = o.title || "Are you sure?";
+    const p = document.createElement("p");
+    p.className = "confirm-msg"; p.textContent = o.message || "";
+    body.append(h, p);
+
+    let dontAsk = null;
+    if (dontAskKey) {
+      const lbl = document.createElement("label");
+      lbl.className = "checkbox-row";
+      dontAsk = document.createElement("input");
+      dontAsk.type = "checkbox";
+      lbl.append(dontAsk, document.createTextNode("Don't ask again"));
+      body.append(lbl);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "modal-actions";
+    const row = document.createElement("div");
+    row.className = "row";
+    const spacer = document.createElement("span"); spacer.className = "spacer";
+    const cancel = document.createElement("button");
+    cancel.className = "btn ghost"; cancel.textContent = "Cancel";
+    const ok = document.createElement("button");
+    ok.className = "btn " + (o.confirmClass || "primary"); ok.textContent = o.confirmText || "Confirm";
+    row.append(spacer, cancel, ok);
+    actions.append(row);
+
+    modal.append(body, actions);
+    overlay.append(modal);
+    document.body.appendChild(overlay);
+    ok.focus();
+
+    const close = (result) => {
+      if (result && dontAsk && dontAsk.checked && dontAskKey) prefSet(dontAskKey, true);
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(false); }
+      else if (e.key === "Enter") { e.preventDefault(); close(true); }
+    };
+    cancel.addEventListener("click", () => close(false));
+    ok.addEventListener("click", () => close(true));
+    overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(false); });
+    document.addEventListener("keydown", onKey);
+  });
+}
 
 const localBackend = {
   mode: "local",
@@ -2428,11 +2505,20 @@ document.getElementById("addTierBtn").addEventListener("click", addTier);
 document.getElementById("exportPngBtn").addEventListener("click", exportPNG);
 document.getElementById("exportJsonBtn").addEventListener("click", exportJSON);
 // Reset = move every ranked item back to Unranked (keeps tiers + items).
-document.getElementById("resetBtn").addEventListener("click", () => {
+document.getElementById("resetBtn").addEventListener("click", async () => {
   if (!state || !canEdit) return;
+  const total = state.tiers.reduce((n, t) => n + t.items.length, 0);
+  if (!total) { toast("Nothing to un-rank"); return; }
+  const ok = await confirmModal({
+    title: "Reset this list?",
+    message: `Move all ${total} ranked item${total > 1 ? "s" : ""} back to Unranked? Your tiers and items are kept.`,
+    confirmText: "Reset",
+    confirmClass: "danger",
+    dontAskKey: "skipResetConfirm",
+  });
+  if (!ok) return;
   const moved = [];
   state.tiers.forEach((t) => { moved.push(...t.items); t.items = []; });
-  if (!moved.length) { toast("Nothing to un-rank"); return; }
   state.pool.push(...moved);
   render();
   persist();
@@ -2442,11 +2528,18 @@ document.getElementById("shareBtn").addEventListener("click", shareCurrent);
 document.getElementById("visibilitySelect").addEventListener("change", (e) => setVisibility(e.target.value));
 document.getElementById("roDup").addEventListener("click", duplicateOpenToMyLists);
 // Remove all = delete every item (de-emphasized, strong confirm; keeps tiers).
-document.getElementById("removeAllBtn").addEventListener("click", () => {
+document.getElementById("removeAllBtn").addEventListener("click", async () => {
   if (!state || !canEdit) return;
   const n = Object.keys(state.items).length;
   if (!n) { toast("No items to remove"); return; }
-  if (!confirm(`Permanently remove all ${n} item${n > 1 ? "s" : ""} from this list? This can't be undone.`)) return;
+  // Destructive — always confirm (no "don't ask again").
+  const ok = await confirmModal({
+    title: "Remove all items?",
+    message: `Permanently remove all ${n} item${n > 1 ? "s" : ""} from this list? Your tiers are kept. This can't be undone.`,
+    confirmText: "Remove all",
+    confirmClass: "danger",
+  });
+  if (!ok) return;
   state.items = {};
   state.tiers.forEach((t) => { t.items = []; });
   state.pool = [];
