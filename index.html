@@ -1414,20 +1414,30 @@ function pickFiles(accept, multiple) {
 
 // Downscale an image blob/file to a max dimension; return both a Blob (for upload)
 // and a data URL (for local storage / instant preview).
+// Decode an image blob to something drawable. Prefers createImageBitmap but falls back to an
+// <img>+objectURL if it errors OR hangs — some clipboard blobs make createImageBitmap never settle.
+function decodeImageBlob(blob) {
+  const viaImg = () => new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob);
+    const i = new Image();
+    i.onload = () => { URL.revokeObjectURL(url); res(i); };
+    i.onerror = () => { URL.revokeObjectURL(url); rej(new Error("image decode failed")); };
+    i.src = url;
+  });
+  if (typeof createImageBitmap !== "function") return viaImg();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fallback = () => { if (settled) return; settled = true; viaImg().then(resolve, reject); };
+    const timer = setTimeout(fallback, 1200); // createImageBitmap hung → use the <img> path
+    createImageBitmap(blob).then(
+      (bm) => { if (settled) { if (bm.close) bm.close(); return; } settled = true; clearTimeout(timer); resolve(bm); },
+      () => { clearTimeout(timer); fallback(); }
+    );
+  });
+}
+
 async function toDownscaledBlob(blob, max = 480) {
-  let img;
-  try {
-    img = await createImageBitmap(blob);
-  } catch (e) {
-    // Fallback via <img> + object URL
-    img = await new Promise((res, rej) => {
-      const url = URL.createObjectURL(blob);
-      const i = new Image();
-      i.onload = () => { URL.revokeObjectURL(url); res(i); };
-      i.onerror = () => { URL.revokeObjectURL(url); rej(e); };
-      i.src = url;
-    });
-  }
+  const img = await decodeImageBlob(blob);
   const w0 = img.width, h0 = img.height;
   const scale = Math.min(1, max / Math.max(w0, h0));
   const w = Math.max(1, Math.round(w0 * scale));
@@ -2056,14 +2066,16 @@ editDeleteBtn.addEventListener("click", () => {
 });
 
 // Set the editor target's image from a blob (used by the "Add/Replace image" button and by paste).
-async function setEditorImage(srcBlob) {
+async function setEditorImage(srcBlob, opts) {
   const t = editTarget();
   if (!t) return;
   let small;
   try { small = await toDownscaledBlob(srcBlob); }
-  catch (e) { toast("Couldn't read image", "err"); return; }
+  catch (e) { toast("Couldn't read that image", "err"); return; }
+  if (t !== editTarget()) return; // editor moved on while decoding
   t.image = small.dataURL;
   refreshEditorMedia();
+  if (opts && opts.toast) toast("Image set");
   if (editingDraft) { t._pendingBlob = small.blob; return; } // uploaded on Save (cloud)
   // Existing item: optimistic local set + background upload in cloud mode.
   if (backend.mode !== "cloud") { render(); persist(); return; }
@@ -2287,27 +2299,33 @@ async function importList() {
 /* ============================================================
    Global handlers
    ============================================================ */
+// Extract the first image blob from a clipboard/drop event (checks both items and files).
+function clipboardImageBlob(dt) {
+  if (!dt) return null;
+  const items = dt.items ? [...dt.items] : [];
+  for (const it of items) {
+    if (it.kind === "file" && it.type && it.type.startsWith("image/")) {
+      const f = it.getAsFile();
+      if (f) return f;
+    }
+  }
+  const files = dt.files ? [...dt.files] : [];
+  return files.find((f) => f.type && f.type.startsWith("image/")) || null;
+}
+
 // Paste image from clipboard.
 document.addEventListener("paste", (e) => {
-  const items = e.clipboardData && e.clipboardData.items;
-  if (!items) return;
-  const imageItem = [...items].find((it) => it.type && it.type.startsWith("image/"));
+  const blob = clipboardImageBlob(e.clipboardData);
 
   // While the editor is open: a pasted image sets the item's image; text pastes into the field as usual.
   if (editorOverlay.classList.contains("show")) {
-    if (imageItem) {
-      const blob = imageItem.getAsFile();
-      if (blob) { e.preventDefault(); setEditorImage(blob); }
-    }
+    if (blob) { e.preventDefault(); setEditorImage(blob, { toast: true }); }
     return;
   }
 
   // On a board: a pasted image adds a new item to the pool.
   if (currentView !== "board" || !canEdit) return;
-  if (imageItem) {
-    const blob = imageItem.getAsFile();
-    if (blob) { e.preventDefault(); addImageFromBlob(blob, "pool"); }
-  }
+  if (blob) { e.preventDefault(); addImageFromBlob(blob, "pool"); }
 });
 
 // Page-level file drop (areas outside any dropzone) + prevent browser opening the file
