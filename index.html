@@ -343,7 +343,8 @@
     padding: 9px 10px; font-size: 14px; font-family: inherit; resize: vertical;
   }
   .field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
-  .modal-actions { display: flex; gap: 8px; padding: 0 18px 18px; }
+  .modal-actions { display: flex; flex-direction: column; gap: 8px; padding: 0 18px 18px; }
+  .modal-actions .row { display: flex; gap: 8px; }
   .modal-actions .spacer { flex: 1; }
 
   /* ---------- Toasts ---------- */
@@ -621,12 +622,16 @@
         </div>
       </div>
       <div class="modal-actions">
-        <button class="btn" id="editReplace">Replace image</button>
-        <button class="btn ghost" id="editRemove" hidden>Remove image</button>
-        <button class="btn danger ghost" id="editDelete">Delete</button>
-        <span class="spacer"></span>
-        <button class="btn ghost" id="editCancel">Cancel</button>
-        <button class="btn primary" id="editSave">Save</button>
+        <div class="row">
+          <button class="btn" id="editReplace">Replace image</button>
+          <button class="btn ghost" id="editRemove" hidden>Remove image</button>
+        </div>
+        <div class="row">
+          <button class="btn danger ghost" id="editDelete">Delete</button>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="editCancel">Cancel</button>
+          <button class="btn primary" id="editSave">Save</button>
+        </div>
       </div>
     </div>
   </div>
