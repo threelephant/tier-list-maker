@@ -2,7 +2,9 @@
 -- Tier List Maker — Supabase schema
 -- ============================================================
 -- HOW TO RUN: Supabase Dashboard → SQL Editor → New query →
--- paste this whole file → Run. Safe to re-run (idempotent).
+-- paste this whole file → Run. Safe to re-run (idempotent) — also migrates
+-- existing tables (column constraints are re-applied via ALTER, since a repeat
+-- CREATE TABLE IF NOT EXISTS is a no-op once the table exists).
 --
 -- After running, also do (one-time):
 --   1. Authentication → Providers → Google → enable (add a Google Cloud
@@ -74,6 +76,13 @@ create table if not exists public.tier_lists (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Bring existing tables up to date: the CREATE TABLE above is skipped entirely
+-- when the table already exists, so column-level constraint changes must be
+-- re-applied explicitly here (e.g. adding 'shared' to the visibility values).
+alter table public.tier_lists drop constraint if exists tier_lists_visibility_check;
+alter table public.tier_lists
+  add constraint tier_lists_visibility_check check (visibility in ('private','public','shared'));
 
 create index if not exists tier_lists_owner_idx      on public.tier_lists (owner);
 create index if not exists tier_lists_visibility_idx on public.tier_lists (visibility);
