@@ -258,6 +258,25 @@
     background: #0d0e12;
     pointer-events: none;
   }
+  /* Monogram block for image-less items */
+  .card .stub {
+    height: var(--cell);
+    display: grid;
+    place-items: center;
+    font-size: 30px;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: .5px;
+    user-select: none;
+    pointer-events: none;
+  }
+  .mini-cell.stub-mini {
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 800;
+    color: #fff;
+  }
   .card .cap {
     padding: 4px 5px;
     font-size: 11px;
@@ -312,6 +331,10 @@
   .modal .preview {
     width: 100%; height: 150px; object-fit: contain;
     background: #0d0e12; border: 1px solid var(--line); border-radius: 8px;
+  }
+  .modal .preview.is-stub {
+    display: grid; place-items: center;
+    font-size: 56px; font-weight: 800; color: #fff;
   }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .field input[type=text], .field textarea {
@@ -587,6 +610,7 @@
     <div class="modal">
       <div class="modal-body">
         <img class="preview" id="editPreview" alt="" />
+        <div class="preview is-stub" id="editStub" hidden></div>
         <div class="field">
           <label for="editName">Name</label>
           <input type="text" id="editName" maxlength="80" placeholder="Item name" />
@@ -598,6 +622,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn" id="editReplace">Replace image</button>
+        <button class="btn ghost" id="editRemove" hidden>Remove image</button>
         <button class="btn danger ghost" id="editDelete">Delete</button>
         <span class="spacer"></span>
         <button class="btn ghost" id="editCancel">Cancel</button>
@@ -683,6 +708,15 @@ function setUserFromSession(session) {
 }
 function initials(s) {
   return (s || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
+}
+
+// Deterministic color from a string (for image-less item monograms). Returns an hsl() string
+// usable in CSS and canvas fillStyle; pair with white text.
+function colorFromString(s) {
+  const str = s || "?";
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  return `hsl(${h}, 46%, 42%)`;
 }
 
 function renderAuth() {
@@ -1263,11 +1297,19 @@ function renderListCard(b) {
     t.items.slice(0, 7).forEach((id) => {
       const it = b.items[id];
       if (!it) return;
-      const img = document.createElement("img");
-      img.className = "mini-cell";
-      img.src = it.image;
-      img.alt = "";
-      cells.appendChild(img);
+      let cell;
+      if (it.image) {
+        cell = document.createElement("img");
+        cell.className = "mini-cell";
+        cell.src = it.image;
+        cell.alt = "";
+      } else {
+        cell = document.createElement("div");
+        cell.className = "mini-cell stub-mini";
+        cell.style.background = colorFromString(it.name);
+        cell.textContent = initials(it.name).slice(0, 1);
+      }
+      cells.appendChild(cell);
       drewImage = true;
     });
     if (t.items.length > 7) {
@@ -1582,15 +1624,12 @@ function render() {
 function makeAddTile() {
   const tile = document.createElement("div");
   tile.className = "card add-tile";
-  tile.title = "Add items";
+  tile.title = "Add item";
   const plus = document.createElement("div");
   plus.className = "plus";
   plus.textContent = "+";
   tile.appendChild(plus);
-  tile.addEventListener("click", async () => {
-    const files = await pickFiles("image/*", true);
-    if (files.length) addImagesFromFiles(files, "pool");
-  });
+  tile.addEventListener("click", openCreateEditor);
   return tile;
 }
 
@@ -1609,15 +1648,23 @@ function renderCard(id) {
   card.dataset.id = id;
   if (item.description) card.title = item.description;
 
-  const img = document.createElement("img");
-  img.src = item.image;
-  img.alt = item.name;
+  let media;
+  if (item.image) {
+    media = document.createElement("img");
+    media.src = item.image;
+    media.alt = item.name;
+  } else {
+    media = document.createElement("div");
+    media.className = "stub";
+    media.style.background = colorFromString(item.name);
+    media.textContent = initials(item.name);
+  }
 
   const cap = document.createElement("div");
   cap.className = "cap";
   cap.textContent = item.name;
 
-  card.append(img, cap);
+  card.append(media, cap);
 
   if (!canEdit) {
     card.style.cursor = "default";
@@ -1887,31 +1934,93 @@ function addTier() {
    ============================================================ */
 const editorOverlay = document.getElementById("editorOverlay");
 const editPreview = document.getElementById("editPreview");
+const editStub = document.getElementById("editStub");
 const editName = document.getElementById("editName");
 const editDesc = document.getElementById("editDesc");
-let editingId = null;
+const editReplaceBtn = document.getElementById("editReplace");
+const editRemoveBtn = document.getElementById("editRemove");
+const editDeleteBtn = document.getElementById("editDelete");
+let editingId = null;      // existing item being edited
+let editingDraft = null;   // new, not-yet-saved item being created
+
+function editTarget() { return editingId ? state.items[editingId] : editingDraft; }
+
+// Show the preview (image or monogram stub) and label the image buttons for the target's state.
+function refreshEditorMedia() {
+  const t = editTarget();
+  if (!t) return;
+  if (t.image) {
+    editPreview.src = t.image;
+    editPreview.hidden = false;
+    editStub.hidden = true;
+    editReplaceBtn.textContent = "Replace image";
+    editRemoveBtn.hidden = false;
+  } else {
+    editPreview.removeAttribute("src");
+    editPreview.hidden = true;
+    editStub.hidden = false;
+    const nm = editName.value || t.name;
+    editStub.style.background = colorFromString(nm);
+    editStub.textContent = initials(nm);
+    editReplaceBtn.textContent = "Add image";
+    editRemoveBtn.hidden = true;
+  }
+}
 
 function openEditor(id) {
   editingId = id;
+  editingDraft = null;
   const item = state.items[id];
-  editPreview.src = item.image;
   editName.value = item.name;
   editDesc.value = item.description || "";
+  editDeleteBtn.hidden = false;
+  refreshEditorMedia();
   editorOverlay.classList.add("show");
   editName.focus();
   editName.select();
 }
 
+function openCreateEditor() {
+  editingId = null;
+  editingDraft = { id: uid(), name: "", description: "", image: null };
+  editName.value = "";
+  editDesc.value = "";
+  editDeleteBtn.hidden = true; // nothing to delete yet — Cancel discards
+  refreshEditorMedia();
+  editorOverlay.classList.add("show");
+  editName.focus();
+}
+
 function closeEditor() {
   editorOverlay.classList.remove("show");
   editingId = null;
+  editingDraft = null;
 }
 
 function saveEditor() {
-  if (!editingId) return;
-  const item = state.items[editingId];
-  item.name = editName.value.trim() || item.name;
-  item.description = editDesc.value.trim();
+  const t = editTarget();
+  if (!t) return;
+  t.name = editName.value.trim() || (editingId ? t.name : "Item " + (++itemCounter));
+  t.description = editDesc.value.trim();
+  if (editingDraft) {
+    const pendingBlob = t._pendingBlob; delete t._pendingBlob;
+    state.items[t.id] = t;
+    state.pool.push(t.id);
+    // Cloud: a freshly-added image came in as a data URL — upload it in the background.
+    if (backend.mode === "cloud" && pendingBlob) {
+      const id = t.id, board = state;
+      t.uploading = true;
+      uploadBlobToStorage(board.id, id, pendingBlob).then((url) => {
+        const it = board.items[id]; if (!it) return;
+        it.image = url; delete it.uploading;
+        if (state === board) render();
+        backend.save(board);
+      }).catch(() => {
+        const it = board.items[id]; if (it) delete it.uploading;
+        if (state === board) render(); backend.save(board);
+      });
+    }
+  }
   closeEditor();
   render();
   persist();
@@ -1922,38 +2031,40 @@ document.getElementById("editSave").addEventListener("click", saveEditor);
 editName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); saveEditor(); }
 });
+editName.addEventListener("input", () => { const t = editTarget(); if (t && !t.image) refreshEditorMedia(); });
 editDesc.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEditor(); }
 });
 document.getElementById("editCancel").addEventListener("click", closeEditor);
-document.getElementById("editDelete").addEventListener("click", () => {
+editDeleteBtn.addEventListener("click", () => {
   if (!editingId) return;
   deleteItem(editingId);
   closeEditor();
   render();
   persist();
 });
-document.getElementById("editReplace").addEventListener("click", async () => {
-  if (!editingId) return;
+
+editReplaceBtn.addEventListener("click", async () => {
+  const t = editTarget();
+  if (!t) return;
   const files = await pickFiles("image/*", false);
   if (!files.length) return;
-  const id = editingId;
   let small;
   try { small = await toDownscaledBlob(files[0]); }
   catch (e) { toast("Couldn't read image", "err"); return; }
-  const item = state.items[id];
-  if (!item) return;
-  item.image = small.dataURL;
-  editPreview.src = small.dataURL;
+  t.image = small.dataURL;
+  refreshEditorMedia();
+  if (editingDraft) { t._pendingBlob = small.blob; return; } // uploaded on Save (cloud)
+  // Existing item: optimistic local set + background upload in cloud mode.
   if (backend.mode !== "cloud") { render(); persist(); return; }
-  item.uploading = true;
+  const id = editingId, board = state;
+  t.uploading = true;
   render();
-  const board = state;
   uploadBlobToStorage(board.id, id, small.blob).then((url) => {
     const it = board.items[id]; if (!it) return;
     it.image = url; delete it.uploading;
     if (state === board) render();
-    if (editingId === id) editPreview.src = url;
+    if (editingId === id) refreshEditorMedia();
     backend.save(board);
   }).catch(() => {
     const it = board.items[id]; if (it) delete it.uploading;
@@ -1961,6 +2072,16 @@ document.getElementById("editReplace").addEventListener("click", async () => {
     backend.save(board);
     toast("Image upload failed — kept a local copy", "err");
   });
+});
+
+editRemoveBtn.addEventListener("click", () => {
+  const t = editTarget();
+  if (!t) return;
+  t.image = null;
+  delete t.uploading;
+  delete t._pendingBlob;
+  refreshEditorMedia();
+  if (editingId) { render(); persist(); }
 });
 editorOverlay.addEventListener("mousedown", (e) => { if (e.target === editorOverlay) closeEditor(); });
 document.addEventListener("keydown", (e) => {
@@ -1993,8 +2114,8 @@ async function exportPNG() {
   const cols = Math.max(1, Math.floor((ITEMS_W + GAP) / (CELL + GAP)));
   const canvasW = PAD + LABEL_W + GAP + ITEMS_W + PAD;
 
-  // Preload images
-  const ids = state.tiers.flatMap((t) => t.items);
+  // Preload images (skip image-less stub items)
+  const ids = state.tiers.flatMap((t) => t.items).filter((id) => state.items[id] && state.items[id].image);
   const imgs = {};
   await Promise.all(ids.map((id) => new Promise((res) => {
     const im = new Image();
@@ -2046,9 +2167,20 @@ async function exportPNG() {
       ctx.save();
       roundRect(ctx, x, cy, CELL, CELL, 7);
       ctx.clip();
-      ctx.fillStyle = "#0d0e12";
-      ctx.fillRect(x, cy, CELL, CELL);
-      if (imgs[id]) drawCover(ctx, imgs[id], x, cy, CELL, CELL);
+      const it = state.items[id];
+      if (imgs[id]) {
+        ctx.fillStyle = "#0d0e12";
+        ctx.fillRect(x, cy, CELL, CELL);
+        drawCover(ctx, imgs[id], x, cy, CELL, CELL);
+      } else {
+        ctx.fillStyle = colorFromString(it.name);
+        ctx.fillRect(x, cy, CELL, CELL);
+        ctx.fillStyle = "#fff";
+        ctx.font = "800 30px -apple-system, Segoe UI, Roboto, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials(it.name), x + CELL / 2, cy + CELL / 2);
+      }
       ctx.restore();
       // Caption
       ctx.fillStyle = "#e9eaed";
