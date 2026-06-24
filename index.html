@@ -604,7 +604,7 @@
   <div class="overlay" id="syncOverlay">
     <div class="modal sync-modal">
       <div class="modal-body">
-        <h3 class="sync-title">Uploading your lists…</h3>
+        <h3 class="sync-title" id="syncTitle">Uploading your lists…</h3>
         <div class="sync-label" id="syncLabel">Preparing…</div>
         <div class="progress-track"><div class="progress-bar" id="syncBar"></div></div>
       </div>
@@ -910,23 +910,45 @@ async function cloudFetchOne(id) {
 // Copy a board's images into the current user's Storage folder, rewriting item.image to the
 // new public URLs. Handles base64 data: URLs (local boards) and foreign Storage URLs (duplicating
 // someone else's public list) — anything not already under this user's own folder.
-async function rehostImagesToStorage(board) {
+// onProgress(done, total) is called once up front (0, total) and after each image — total is the
+// number of images that actually need rehosting, so callers can drive a progress bar.
+async function rehostImagesToStorage(board, onProgress) {
   if (!sb || !currentUser) return;
   const ownPrefix = `/tier-images/${currentUser.id}/`;
-  for (const [itemId, it] of Object.entries(board.items || {})) {
-    const img = it.image;
-    if (typeof img !== "string") continue;
+  const todo = Object.entries(board.items || {}).filter(([, it]) => {
+    const img = it && it.image;
+    if (typeof img !== "string") return false;
     const isData = img.startsWith("data:");
     const isForeign = /^https?:/.test(img) && !img.includes(ownPrefix);
-    if (!isData && !isForeign) continue;
+    return isData || isForeign;
+  });
+  const total = todo.length;
+  let done = 0;
+  if (onProgress) onProgress(done, total);
+  for (const [itemId, it] of todo) {
     try {
-      const blob = await (await fetch(img)).blob();
+      const blob = await (await fetch(it.image)).blob();
       const path = `${currentUser.id}/${board.id}/${itemId}.png`;
       const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
       if (!up.error) it.image = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
     } catch (e) { /* keep original as fallback */ }
+    done++;
+    if (onProgress) onProgress(done, total);
   }
 }
+
+// Shared progress overlay (used by both "save a copy" and first-sign-in sync).
+function openProgress(title) {
+  byId("syncTitle").textContent = title;
+  byId("syncBar").style.width = "0%";
+  byId("syncLabel").textContent = "Preparing…";
+  byId("syncOverlay").classList.add("show");
+}
+function setProgress(frac, label) {
+  byId("syncBar").style.width = Math.round(frac * 100) + "%";
+  if (label != null) byId("syncLabel").textContent = label;
+}
+function closeProgress() { byId("syncOverlay").classList.remove("show"); }
 
 const localBackend = {
   mode: "local",
@@ -1178,10 +1200,19 @@ async function duplicateBoardToAccount(src) {
   copy.id = uid(); copy.owner = currentUser.id; copy.visibility = "private";
   copy.name = (src.name || "Tier list") + " (copy)";
   copy.createdAt = nowMs(); copy.updatedAt = nowMs();
-  toast("Saving a copy…");
-  await rehostImagesToStorage(copy); // copy images into my own Storage folder
-  boardsCache.push(copy); order.push(copy.id);
-  const ok = await cloudBackend.save(copy);
+  openProgress("Saving a copy…");
+  let ok;
+  try {
+    // copy images into my own Storage folder, showing per-image progress
+    await rehostImagesToStorage(copy, (n, total) => {
+      setProgress(total ? n / total : 1, total ? `Copying image ${Math.min(n + 1, total)} of ${total}` : "Saving…");
+    });
+    boardsCache.push(copy); order.push(copy.id);
+    setProgress(1, "Saving…");
+    ok = await cloudBackend.save(copy);
+  } finally {
+    closeProgress();
+  }
   if (ok === false) {
     boardsCache = boardsCache.filter((x) => x.id !== copy.id);
     order = order.filter((x) => x !== copy.id);
@@ -1241,14 +1272,10 @@ async function maybeOfferSync() {
     await dbPut("app", true, flagKey);
     return;
   }
-  const overlay = byId("syncOverlay");
-  const bar = byId("syncBar");
-  const label = byId("syncLabel");
-  bar.style.width = "0%";
-  overlay.classList.add("show");
+  openProgress("Uploading your lists…");
   let done = 0;
   for (const lb of localBoards) {
-    label.textContent = `Uploading “${lb.name || "Untitled list"}” — ${done + 1} of ${n}`;
+    setProgress(done / n, `Uploading “${lb.name || "Untitled list"}” — ${done + 1} of ${n}`);
     try {
       const board = JSON.parse(JSON.stringify(lb));
       await rehostImagesToStorage(board);
@@ -1261,11 +1288,11 @@ async function maybeOfferSync() {
       });
     } catch (e) { console.warn("sync failed for a board", e); }
     done++;
-    bar.style.width = Math.round((done / n) * 100) + "%";
+    setProgress(done / n);
   }
   await dbPut("app", true, flagKey);
   await cloudBackend.load();
-  overlay.classList.remove("show");
+  closeProgress();
   renderMenu();
   toast("Local lists uploaded to your account");
 }
