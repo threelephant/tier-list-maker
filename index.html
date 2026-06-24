@@ -1163,11 +1163,12 @@ async function shareCurrent() {
   catch (e) { prompt("Copy this share link:", link); }
 }
 
-async function duplicateOpenToMyLists() {
-  if (!currentUser) return signInWithGoogle();
-  const copy = JSON.parse(JSON.stringify(state));
+// Copy a board into the signed-in user's account (rehost images) and open the copy.
+async function duplicateBoardToAccount(src) {
+  if (!currentUser) return false; // guard: a cross-tab sign-out could land here mid-flight
+  const copy = JSON.parse(JSON.stringify(src));
   copy.id = uid(); copy.owner = currentUser.id; copy.visibility = "private";
-  copy.name = state.name + " (copy)";
+  copy.name = (src.name || "Tier list") + " (copy)";
   copy.createdAt = nowMs(); copy.updatedAt = nowMs();
   toast("Saving a copy…");
   await rehostImagesToStorage(copy); // copy images into my own Storage folder
@@ -1177,10 +1178,47 @@ async function duplicateOpenToMyLists() {
     boardsCache = boardsCache.filter((x) => x.id !== copy.id);
     order = order.filter((x) => x !== copy.id);
     toast("Couldn't save a copy", "err");
-    return;
+    return false;
   }
   toast("Saved to your lists");
   goBoard(copy.id);
+  return true;
+}
+
+async function duplicateOpenToMyLists() {
+  if (!currentUser) {
+    if (!state) return;
+    // Sign-in does a full OAuth redirect; localStorage is the only channel that survives it.
+    // If storage is blocked, abort with a message rather than redirecting into a flow that can't finish.
+    try { localStorage.setItem("pendingDuplicate", state.id); }
+    catch (e) { return toast("Your browser is blocking storage — can't save a copy after sign-in", "err"); }
+    return signInWithGoogle();
+  }
+  if (state) await duplicateBoardToAccount(state);
+}
+
+// After signing in: if a "save a copy" was pending, fetch that list and copy it into the account.
+// Returns true if it handled navigation (opened the copy).
+async function handlePendingDuplicate() {
+  if (!currentUser || !sb) return false;
+  let listId = null;
+  try { listId = localStorage.getItem("pendingDuplicate"); } catch (e) {}
+  if (!listId) return false;
+  const clearIntent = () => { try { localStorage.removeItem("pendingDuplicate"); } catch (e) {} };
+
+  // Already mine (e.g. I'm the owner) → just open it.
+  const owned = boardsCache.find((b) => b.id === listId);
+  if (owned) { clearIntent(); goBoard(owned.id); return true; }
+
+  const res = await cloudFetchOne(listId);
+  if (!res || !res.board) {
+    clearIntent(); // not accessible (private/deleted) — don't keep retrying on every load
+    toast("Couldn't find that list to copy", "err");
+    return false;
+  }
+  const done = await duplicateBoardToAccount(res.board);
+  if (done) clearIntent(); // keep the intent on a transient save failure so a reload retries
+  return done;
 }
 
 /* ---- one-time local → cloud sync on first sign-in ---- */
@@ -2431,9 +2469,18 @@ document.getElementById("importListBtn").addEventListener("click", importList);
   renderAuth();
 
   window.addEventListener("hashchange", route);
-  await route();
 
-  if (currentUser) await maybeOfferSync();
+  // If a "save a copy" was pending across the sign-in redirect, finish it (opens the copy).
+  // If the sign-in was cancelled (still logged out), drop the stale intent.
+  let handled = false;
+  if (currentUser) {
+    handled = await handlePendingDuplicate();
+  } else {
+    try { localStorage.removeItem("pendingDuplicate"); } catch (e) {}
+  }
+  if (!handled) await route();
+
+  if (currentUser && !handled) await maybeOfferSync();
   if (!db) toast("Local storage unavailable", "err");
 })();
 </script>
