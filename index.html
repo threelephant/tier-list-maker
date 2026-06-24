@@ -336,6 +336,11 @@
     display: grid; place-items: center;
     font-size: 56px; font-weight: 800; color: #fff;
   }
+  .img-hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: -4px; }
+  .img-hint kbd {
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px;
+  }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .field input[type=text], .field textarea {
     width: 100%; background: var(--bg); color: var(--text);
@@ -612,6 +617,7 @@
       <div class="modal-body">
         <img class="preview" id="editPreview" alt="" />
         <div class="preview is-stub" id="editStub" hidden></div>
+        <div class="img-hint">Use <b>Add image</b> or paste with <kbd>⌘/Ctrl</kbd> + <kbd>V</kbd></div>
         <div class="field">
           <label for="editName">Name</label>
           <input type="text" id="editName" maxlength="80" placeholder="Item name" />
@@ -2049,13 +2055,12 @@ editDeleteBtn.addEventListener("click", () => {
   persist();
 });
 
-editReplaceBtn.addEventListener("click", async () => {
+// Set the editor target's image from a blob (used by the "Add/Replace image" button and by paste).
+async function setEditorImage(srcBlob) {
   const t = editTarget();
   if (!t) return;
-  const files = await pickFiles("image/*", false);
-  if (!files.length) return;
   let small;
-  try { small = await toDownscaledBlob(files[0]); }
+  try { small = await toDownscaledBlob(srcBlob); }
   catch (e) { toast("Couldn't read image", "err"); return; }
   t.image = small.dataURL;
   refreshEditorMedia();
@@ -2077,6 +2082,12 @@ editReplaceBtn.addEventListener("click", async () => {
     backend.save(board);
     toast("Image upload failed — kept a local copy", "err");
   });
+}
+
+editReplaceBtn.addEventListener("click", async () => {
+  if (!editTarget()) return;
+  const files = await pickFiles("image/*", false);
+  if (files.length) setEditorImage(files[0]);
 });
 
 editRemoveBtn.addEventListener("click", () => {
@@ -2276,17 +2287,26 @@ async function importList() {
 /* ============================================================
    Global handlers
    ============================================================ */
-// Paste image from clipboard (only while editing a board)
+// Paste image from clipboard.
 document.addEventListener("paste", (e) => {
-  if (currentView !== "board" || !canEdit) return;
-  if (editorOverlay.classList.contains("show")) return; // let textfields paste normally
   const items = e.clipboardData && e.clipboardData.items;
   if (!items) return;
-  for (const it of items) {
-    if (it.type && it.type.startsWith("image/")) {
-      const blob = it.getAsFile();
-      if (blob) { e.preventDefault(); addImageFromBlob(blob, "pool"); return; }
+  const imageItem = [...items].find((it) => it.type && it.type.startsWith("image/"));
+
+  // While the editor is open: a pasted image sets the item's image; text pastes into the field as usual.
+  if (editorOverlay.classList.contains("show")) {
+    if (imageItem) {
+      const blob = imageItem.getAsFile();
+      if (blob) { e.preventDefault(); setEditorImage(blob); }
     }
+    return;
+  }
+
+  // On a board: a pasted image adds a new item to the pool.
+  if (currentView !== "board" || !canEdit) return;
+  if (imageItem) {
+    const blob = imageItem.getAsFile();
+    if (blob) { e.preventDefault(); addImageFromBlob(blob, "pool"); }
   }
 });
 
