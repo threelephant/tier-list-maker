@@ -1493,7 +1493,10 @@ function uploadBlobToStorage(boardId, itemId, blob) {
   return sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true })
     .then((up) => {
       if (up.error) throw up.error;
-      return sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+      const base = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+      // Replacing reuses the same path (upsert), so the URL is unchanged and the browser/CDN
+      // would serve the OLD cached image. Append a version token to force a fresh fetch.
+      return base + "?v=" + Date.now();
     });
 }
 
