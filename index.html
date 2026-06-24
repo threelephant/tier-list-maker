@@ -1047,11 +1047,18 @@ async function route() {
   showMenu();
 }
 
+// Tab title reflects the open list, e.g. "Top Games — Tier List Maker".
+function setDocTitle(name) {
+  const n = (name || "").trim();
+  document.title = n ? `${n} — Tier List Maker` : "Tier List Maker";
+}
+
 function showMenu() {
   currentView = "menu";
   state = null;
   boardView.hidden = true;
   menuView.hidden = false;
+  setDocTitle(null);
   renderMenu();
 }
 
@@ -1062,6 +1069,7 @@ function openBoard(board, editable) {
   itemCounter = Object.keys(board.items).length;
   if (backend.mode === "local" && canEdit) setLastOpened(board.id);
   boardNameInput.value = board.name;
+  setDocTitle(board.name);
   menuView.hidden = true;
   boardView.hidden = false;
   applyEditableUI();
@@ -1118,7 +1126,7 @@ function renameBoard(id, name) {
   b.name = trimmed;
   b.updatedAt = nowMs();
   backend.save(b);
-  if (state && state.id === id) boardNameInput.value = b.name;
+  if (state && state.id === id) { boardNameInput.value = b.name; setDocTitle(b.name); }
 }
 
 /* ---- read-only vs editable UI + sharing (cloud, owner only) ---- */
@@ -2426,6 +2434,7 @@ boardNameInput.addEventListener("change", () => {
   if (!state || !canEdit) return;
   state.name = boardNameInput.value.trim() || "Untitled list";
   boardNameInput.value = state.name;
+  setDocTitle(state.name);
   persist();
 });
 boardNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") boardNameInput.blur(); });
