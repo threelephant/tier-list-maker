@@ -1083,9 +1083,10 @@ const cloudBackend = {
   async processImage(file, itemId) {
     const { blob } = await toDownscaledBlob(file);
     const path = `${currentUser.id}/${state.id}/${itemId}.png`;
-    const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true });
+    const up = await sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true, cacheControl: "31536000" });
     if (up.error) throw up.error;
-    return sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
+    // Version token (?v=) keeps the long cache safe on replace; mirrors uploadBlobToStorage.
+    return sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl + "?v=" + Date.now();
   },
 };
 
@@ -1464,6 +1465,8 @@ function renderListCard(b) {
         cell.className = "mini-cell";
         cell.src = it.image;
         cell.alt = "";
+        cell.loading = "lazy";
+        cell.decoding = "async";
       } else {
         cell = document.createElement("div");
         cell.className = "mini-cell stub-mini";
@@ -1640,7 +1643,7 @@ function deleteItem(id) {
 // Upload a blob to Storage and resolve with its public URL.
 function uploadBlobToStorage(boardId, itemId, blob) {
   const path = `${currentUser.id}/${boardId}/${itemId}.png`;
-  return sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true })
+  return sb.storage.from("tier-images").upload(path, blob, { contentType: "image/png", upsert: true, cacheControl: "31536000" })
     .then((up) => {
       if (up.error) throw up.error;
       const base = sb.storage.from("tier-images").getPublicUrl(path).data.publicUrl;
@@ -1827,6 +1830,8 @@ function renderCard(id) {
     media = document.createElement("img");
     media.src = item.image;
     media.alt = item.name;
+    media.loading = "lazy";
+    media.decoding = "async";
   } else {
     media = document.createElement("div");
     media.className = "stub";
