@@ -342,7 +342,7 @@
     border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px;
   }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
-  .field input[type=text], .field textarea {
+  .field input[type=text], .field input[type=number], .field textarea {
     width: 100%; background: var(--bg); color: var(--text);
     border: 1px solid var(--line); border-radius: 8px;
     padding: 9px 10px; font-size: 14px; font-family: inherit; resize: vertical;
@@ -354,6 +354,14 @@
   .confirm-msg { margin: 0; font-size: 14px; color: var(--text); line-height: 1.45; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
   .checkbox-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; margin: 0; }
+
+  /* ---------- Generate-with-AI modal ---------- */
+  .gen-modal { max-width: 460px; }
+  .gen-row { display: flex; gap: 8px; align-items: stretch; }
+  .gen-row .gen-topic { flex: 1 1 0; min-width: 0; }
+  .gen-row .gen-count { flex: 0 0 72px; text-align: center; }
+  .gen-modal textarea { font-size: 12.5px; line-height: 1.45; }
+  .gen-step { font-size: 12px; color: var(--muted); font-weight: 600; }
 
   /* ---------- Toasts ---------- */
   #toasts {
@@ -553,6 +561,7 @@
       <h1><span class="logo">🏆</span> Tier Lists</h1>
       <div id="authArea" class="auth-area"></div>
       <button class="btn primary" id="newListBtn">+ New list</button>
+      <button class="btn" id="generateBtn">✨ Generate with AI</button>
       <button class="btn" id="importListBtn">Import list</button>
     </header>
     <main>
@@ -560,7 +569,7 @@
       <div id="menuEmpty" class="menu-empty" hidden>
         <div class="menu-empty-art">🏆</div>
         <h2>No tier lists yet</h2>
-        <p>Create your first tier list, or import one from a JSON file.</p>
+        <p>Create your first tier list, generate one with AI, or import one from a JSON file.</p>
         <button class="btn primary" id="newListBtn2">+ New list</button>
       </div>
     </main>
@@ -2410,6 +2419,40 @@ function exportJSON() {
   toast("JSON exported");
 }
 
+// Save a freshly-built board to the active backend and open it. Returns true on success.
+// opts: { rehost (move embedded images to Storage on cloud), okMsg, failMsg }.
+async function saveAndOpenNewBoard(board, opts) {
+  const o = opts || {};
+  if (backend.mode === "cloud" && currentUser) {
+    board.owner = currentUser.id;
+    board.visibility = "private";
+    if (o.rehost) await rehostImagesToStorage(board); // move any base64 images into Storage
+  }
+  boardsCache.push(board);
+  order.push(board.id);
+  const ok = await backend.save(board);
+  if (ok === false) {
+    boardsCache = boardsCache.filter((x) => x.id !== board.id);
+    order = order.filter((x) => x !== board.id);
+    toast(o.failMsg || "Couldn't save the list", "err");
+    return false;
+  }
+  if (o.okMsg) toast(o.okMsg);
+  goBoard(board.id);
+  return true;
+}
+
+// Normalize a parsed tier-list export's tiers in place (ensure required fields exist).
+function normalizeTiers(tiers) {
+  tiers.forEach((t) => {
+    t.id = t.id || uid();
+    t.items = Array.isArray(t.items) ? t.items : [];
+    t.color = t.color || "#888888";
+    t.name = t.name == null ? "?" : String(t.name);
+  });
+  return tiers;
+}
+
 // Import a JSON file from the menu → creates a new list and opens it.
 async function importList() {
   const files = await pickFiles("application/json,.json", false);
@@ -2419,39 +2462,233 @@ async function importList() {
     const data = JSON.parse(text);
     if (!data || !Array.isArray(data.tiers) || typeof data.items !== "object" || !Array.isArray(data.pool))
       throw new Error("bad shape");
-    // Trust the file but ensure required tier fields exist.
-    data.tiers.forEach((t) => {
-      t.id = t.id || uid();
-      t.items = Array.isArray(t.items) ? t.items : [];
-      t.color = t.color || "#888888";
-      t.name = t.name == null ? "?" : String(t.name);
-    });
     const t = nowMs();
     const board = {
       id: uid(),
       name: (data.name && String(data.name)) || files[0].name.replace(/\.json$/i, "") || "Imported list",
-      version: 1, tiers: data.tiers, pool: data.pool, items: data.items,
+      version: 1, tiers: normalizeTiers(data.tiers), pool: data.pool, items: data.items,
       createdAt: t, updatedAt: t,
     };
-    if (backend.mode === "cloud" && currentUser) {
-      board.owner = currentUser.id;
-      board.visibility = "private";
-      await rehostImagesToStorage(board); // move any base64 images into Storage
-    }
-    boardsCache.push(board);
-    order.push(board.id);
-    const ok = await backend.save(board);
-    if (ok === false) {
-      boardsCache = boardsCache.filter((x) => x.id !== board.id);
-      order = order.filter((x) => x !== board.id);
-      toast("Import failed — couldn't save to cloud", "err");
-      return;
-    }
-    toast("List imported");
-    goBoard(board.id);
+    await saveAndOpenNewBoard(board, { rehost: true, okMsg: "List imported", failMsg: "Import failed — couldn't save to cloud" });
   } catch (e) {
     toast("Import failed — not a valid tier-list file", "err");
   }
+}
+
+/* ============================================================
+   Generate with AI (bring-your-own-LLM, copy-paste bridge)
+   ============================================================ */
+// Build the copy-paste prompt that asks any LLM for a simple { name, items[] } list.
+function buildItemsPrompt(topic, count) {
+  const n = count || 30;
+  const t = (topic || "").trim() || "your topic";
+  return [
+    `Generate a list of ${n} well-known items for a tier-list about: ${t}.`,
+    ``,
+    `Return ONLY valid JSON in exactly this shape (no commentary):`,
+    "```json",
+    `{`,
+    `  "name": "${t} tier list",`,
+    `  "items": [`,
+    `    { "name": "Item name", "description": "optional one-line note" }`,
+    `  ]`,
+    `}`,
+    "```",
+    ``,
+    `Rules:`,
+    `- Include about ${n} real, specific, well-known items for "${t}".`,
+    `- No duplicates. Keep each "name" short (a few words).`,
+    `- "description" is optional and at most one short sentence; omit it if not useful.`,
+    `- Do NOT include images, URLs, ranks, tiers, or ids — just the item names.`,
+    `- Output only the JSON.`,
+  ].join("\n");
+}
+
+// Pull JSON out of whatever an LLM pasted: raw, fenced ```json block, or text around it.
+function extractJson(text) {
+  const s = (text || "").trim();
+  if (!s) return null;
+  try { return JSON.parse(s); } catch (e) {}
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) { try { return JSON.parse(fence[1].trim()); } catch (e) {} }
+  const first = s.search(/[\[{]/);
+  if (first >= 0) {
+    const close = s[first] === "{" ? "}" : "]";
+    const last = s.lastIndexOf(close);
+    if (last > first) { try { return JSON.parse(s.slice(first, last + 1)); } catch (e) {} }
+  }
+  return null;
+}
+
+// Coerce assorted shapes (array of strings / {name} objects, or { items: [...] }) into
+// a deduplicated [{ name, description }] list. Caps at 200 items.
+function itemsFromData(data) {
+  let arr = null;
+  if (Array.isArray(data)) arr = data;
+  else if (data && Array.isArray(data.items)) arr = data.items;
+  if (!arr) return null;
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    let nm = "", desc = "";
+    if (typeof raw === "string") nm = raw;
+    else if (raw && typeof raw === "object") { nm = raw.name != null ? raw.name : raw.title; desc = raw.description || raw.desc || ""; }
+    nm = (nm == null ? "" : String(nm)).trim();
+    if (!nm) continue;
+    const key = nm.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name: nm.slice(0, 80), description: String(desc || "").trim().slice(0, 200) });
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
+// Build a fresh board with all items in the Unranked pool (no images → monogram tiles).
+function boardFromItems(name, items) {
+  const board = newBoard(name);
+  for (const it of items) {
+    const id = uid();
+    board.items[id] = { id, name: it.name, description: it.description || "", image: null };
+    board.pool.push(id);
+  }
+  return board;
+}
+
+// Parse pasted LLM output and create+open a list. Returns true on success.
+async function importFromText(text, topicName) {
+  const data = extractJson(text);
+  if (!data) { toast("Couldn't read that — paste the JSON the AI gave you", "err"); return false; }
+  // Full export shape → reuse the standard import path.
+  if (data && !Array.isArray(data) && Array.isArray(data.tiers) && Array.isArray(data.pool) && data.items && typeof data.items === "object") {
+    const t = nowMs();
+    const board = {
+      id: uid(),
+      name: (data.name && String(data.name)) || topicName || "Imported list",
+      version: 1, tiers: normalizeTiers(data.tiers), pool: data.pool, items: data.items,
+      createdAt: t, updatedAt: t,
+    };
+    return saveAndOpenNewBoard(board, { rehost: true, okMsg: "List created", failMsg: "Couldn't save the list" });
+  }
+  // Simple items shape.
+  const items = itemsFromData(data);
+  if (!items || !items.length) { toast("No items found in that JSON", "err"); return false; }
+  const name = (data && !Array.isArray(data) && data.name && String(data.name)) || topicName || "AI tier list";
+  const board = boardFromItems(name, items);
+  return saveAndOpenNewBoard(board, {
+    rehost: false,
+    okMsg: `Created “${name}” with ${items.length} item${items.length === 1 ? "" : "s"}`,
+    failMsg: "Couldn't save the list",
+  });
+}
+
+// The Generate-with-AI dialog: topic → copy-paste prompt → paste JSON → list.
+function openGenerateModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "overlay show";
+  const modal = document.createElement("div");
+  modal.className = "modal gen-modal";
+  const body = document.createElement("div");
+  body.className = "modal-body";
+
+  const h = document.createElement("h3");
+  h.className = "sync-title";
+  h.textContent = "✨ Generate with AI";
+  const intro = document.createElement("p");
+  intro.className = "confirm-msg";
+  intro.textContent = "Pick a topic, copy the prompt into ChatGPT, Claude, Gemini — any AI — then paste its answer back here.";
+
+  const topicField = document.createElement("div");
+  topicField.className = "field";
+  const topicLbl = document.createElement("label");
+  topicLbl.textContent = "What's your tier list about?";
+  const topicRow = document.createElement("div");
+  topicRow.className = "gen-row";
+  const topicInput = document.createElement("input");
+  topicInput.type = "text"; topicInput.placeholder = "e.g. NBA point guards"; topicInput.className = "gen-topic"; topicInput.maxLength = 80;
+  const countInput = document.createElement("input");
+  countInput.type = "number"; countInput.min = "1"; countInput.max = "200"; countInput.value = "30"; countInput.className = "gen-count"; countInput.title = "How many items";
+  topicRow.append(topicInput, countInput);
+  topicField.append(topicLbl, topicRow);
+
+  const buildBtn = document.createElement("button");
+  buildBtn.className = "btn primary"; buildBtn.textContent = "Build prompt";
+
+  const promptField = document.createElement("div");
+  promptField.className = "field"; promptField.hidden = true;
+  const promptLbl = document.createElement("label");
+  promptLbl.className = "gen-step"; promptLbl.textContent = "1. Copy this prompt into your AI";
+  const promptTa = document.createElement("textarea");
+  promptTa.readOnly = true; promptTa.rows = 7;
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "btn"; copyBtn.textContent = "Copy prompt";
+  promptField.append(promptLbl, promptTa, copyBtn);
+
+  const pasteField = document.createElement("div");
+  pasteField.className = "field";
+  const pasteLbl = document.createElement("label");
+  pasteLbl.className = "gen-step"; pasteLbl.textContent = "2. Paste the AI's JSON answer here";
+  const pasteTa = document.createElement("textarea");
+  pasteTa.rows = 5; pasteTa.placeholder = '{ "items": [ … ] }';
+  pasteField.append(pasteLbl, pasteTa);
+
+  body.append(h, intro, topicField, buildBtn, promptField, pasteField);
+
+  const actions = document.createElement("div");
+  actions.className = "modal-actions";
+  const row = document.createElement("div");
+  row.className = "row";
+  const spacer = document.createElement("span"); spacer.className = "spacer";
+  const cancel = document.createElement("button");
+  cancel.className = "btn ghost"; cancel.textContent = "Cancel";
+  const create = document.createElement("button");
+  create.className = "btn primary"; create.textContent = "Create list";
+  row.append(spacer, cancel, create);
+  actions.append(row);
+
+  modal.append(body, actions);
+  overlay.append(modal);
+  document.body.appendChild(overlay);
+  topicInput.focus();
+
+  const close = () => { document.removeEventListener("keydown", onKey); overlay.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
+
+  const build = () => {
+    const topic = topicInput.value.trim();
+    if (!topic) { topicInput.focus(); toast("Enter a topic first", "err"); return; }
+    let n = parseInt(countInput.value, 10);
+    if (!Number.isFinite(n)) n = 30;
+    n = Math.max(1, Math.min(200, n));
+    countInput.value = String(n);
+    promptTa.value = buildItemsPrompt(topic, n);
+    promptField.hidden = false;
+    promptTa.focus(); promptTa.select();
+  };
+  buildBtn.addEventListener("click", build);
+  topicInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); build(); } });
+
+  copyBtn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(promptTa.value); toast("Prompt copied"); }
+    catch (e) {
+      promptTa.focus(); promptTa.select();
+      try { document.execCommand("copy"); toast("Prompt copied"); }
+      catch (_) { toast("Press ⌘/Ctrl+C to copy", "err"); }
+    }
+  });
+
+  create.addEventListener("click", async () => {
+    const text = pasteTa.value.trim();
+    if (!text) { pasteTa.focus(); toast("Paste the AI's JSON first", "err"); return; }
+    create.disabled = true;
+    const ok = await importFromText(text, topicInput.value.trim());
+    create.disabled = false;
+    if (ok) close();
+  });
+
+  cancel.addEventListener("click", close);
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+  document.addEventListener("keydown", onKey);
 }
 
 /* ============================================================
@@ -2568,6 +2805,7 @@ boardNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") board
 document.getElementById("newListBtn").addEventListener("click", createBoard);
 document.getElementById("newListBtn2").addEventListener("click", createBoard);
 document.getElementById("importListBtn").addEventListener("click", importList);
+document.getElementById("generateBtn").addEventListener("click", openGenerateModal);
 
 /* ============================================================
    Boot
