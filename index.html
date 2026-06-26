@@ -2504,10 +2504,8 @@ function buildItemsPrompt(topic, count) {
   ].join("\n");
 }
 
-// Pull JSON out of whatever an LLM pasted: raw, fenced ```json block, or text around it.
-function extractJson(text) {
-  const s = (text || "").trim();
-  if (!s) return null;
+// Try to parse a string as JSON: raw, then a fenced ```json block, then the {…}/[…] span.
+function tryParseJsonVariants(s) {
   try { return JSON.parse(s); } catch (e) {}
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) { try { return JSON.parse(fence[1].trim()); } catch (e) {} }
@@ -2518,6 +2516,25 @@ function extractJson(text) {
     if (last > first) { try { return JSON.parse(s.slice(first, last + 1)); } catch (e) {} }
   }
   return null;
+}
+
+// Repair common copy-paste / LLM artifacts that break JSON.parse: smart quotes
+// (curly “ ” ‘ ’), zero-width chars, and trailing commas. Only used as a fallback.
+function sanitizeLooseJson(s) {
+  return s
+    .replace(/[“”„‟＂]/g, '"')   // “ ” „ ‟ ＂ → "
+    .replace(/[‘’‚‛＇]/g, "'")   // ‘ ’ ‚ ‛ ＇ → '
+    .replace(/[​-‍﻿]/g, "")               // zero-width / BOM
+    .replace(/,(\s*[}\]])/g, "$1");                       // trailing commas
+}
+
+// Pull JSON out of whatever an LLM pasted, repairing smart quotes etc. on a retry.
+function extractJson(text) {
+  const s = (text || "").trim();
+  if (!s) return null;
+  const direct = tryParseJsonVariants(s);
+  if (direct != null) return direct;
+  return tryParseJsonVariants(sanitizeLooseJson(s));
 }
 
 // Coerce assorted shapes (array of strings / {name} objects, or { items: [...] }) into
