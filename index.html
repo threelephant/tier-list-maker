@@ -341,6 +341,9 @@
     background: var(--panel-2); border: 1px solid var(--line);
     border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 10px;
   }
+  .img-hint a { color: var(--accent); text-decoration: none; }
+  .img-hint a:hover { text-decoration: underline; }
+  .img-hint a.disabled { color: var(--muted); opacity: .55; pointer-events: none; }
   .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; font-weight: 600; }
   .field input[type=text], .field input[type=number], .field textarea {
     width: 100%; background: var(--bg); color: var(--text);
@@ -631,6 +634,7 @@
         <img class="preview" id="editPreview" alt="" />
         <div class="preview is-stub" id="editStub" hidden></div>
         <div class="img-hint">Use <b>Add image</b> or paste with <kbd>⌘/Ctrl</kbd> + <kbd>V</kbd></div>
+        <div class="img-hint">Find a picture: <a id="editSearch" target="_blank" rel="noopener noreferrer">Google Images</a></div>
         <div class="field">
           <label for="editName">Name</label>
           <input type="text" id="editName" maxlength="80" placeholder="Item name" />
@@ -2127,6 +2131,7 @@ const editName = document.getElementById("editName");
 const editDesc = document.getElementById("editDesc");
 const editReplaceBtn = document.getElementById("editReplace");
 const editRemoveBtn = document.getElementById("editRemove");
+const editSearch = document.getElementById("editSearch");
 const editDeleteBtn = document.getElementById("editDelete");
 let editingId = null;      // existing item being edited
 let editingDraft = null;   // new, not-yet-saved item being created
@@ -2152,6 +2157,20 @@ function refreshEditorMedia() {
     editStub.textContent = initials(nm);
     editReplaceBtn.textContent = "Add image";
     editRemoveBtn.hidden = true;
+  }
+  updateEditSearch();
+}
+
+// Point the "Google Images" link at a square-image search (tbs=iar:s) for the current name.
+function updateEditSearch() {
+  const t = editTarget();
+  const name = (editName.value || (t && t.name) || "").trim();
+  if (name) {
+    editSearch.href = "https://www.google.com/search?tbm=isch&tbs=iar:s&q=" + encodeURIComponent(name);
+    editSearch.classList.remove("disabled");
+  } else {
+    editSearch.removeAttribute("href");
+    editSearch.classList.add("disabled");
   }
 }
 
@@ -2219,7 +2238,7 @@ document.getElementById("editSave").addEventListener("click", saveEditor);
 editName.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); saveEditor(); }
 });
-editName.addEventListener("input", () => { const t = editTarget(); if (t && !t.image) refreshEditorMedia(); });
+editName.addEventListener("input", () => { const t = editTarget(); if (t && !t.image) refreshEditorMedia(); updateEditSearch(); });
 editDesc.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveEditor(); }
 });
