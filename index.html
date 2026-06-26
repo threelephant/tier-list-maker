@@ -358,7 +358,7 @@
   .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
   .checkbox-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; margin: 0; }
 
-  /* ---------- Generate-with-AI modal ---------- */
+  /* ---------- Quick-fill modal ---------- */
   .gen-modal { max-width: 460px; }
   .gen-row { display: flex; gap: 8px; align-items: stretch; }
   .gen-row .gen-topic { flex: 1 1 0; min-width: 0; }
@@ -564,7 +564,7 @@
       <h1><span class="logo">🏆</span> Tier Lists</h1>
       <div id="authArea" class="auth-area"></div>
       <button class="btn primary" id="newListBtn">+ New list</button>
-      <button class="btn" id="generateBtn">✨ Generate with AI</button>
+      <button class="btn" id="generateBtn">Quick-fill</button>
       <button class="btn" id="importListBtn">Import list</button>
     </header>
     <main>
@@ -572,7 +572,7 @@
       <div id="menuEmpty" class="menu-empty" hidden>
         <div class="menu-empty-art">🏆</div>
         <h2>No tier lists yet</h2>
-        <p>Create your first tier list, generate one with AI, or import one from a JSON file.</p>
+        <p>Create your first tier list, quick-fill one from a topic, or import one from a JSON file.</p>
         <button class="btn primary" id="newListBtn2">+ New list</button>
       </div>
     </main>
@@ -2495,7 +2495,7 @@ async function importList() {
 }
 
 /* ============================================================
-   Generate with AI (bring-your-own-LLM, copy-paste bridge)
+   Quick-fill from a topic (bring-your-own-chatbot, copy-paste bridge)
    ============================================================ */
 // Build the copy-paste prompt that asks any LLM for a simple { name, items[] } list.
 function buildItemsPrompt(topic, count) {
@@ -2594,7 +2594,7 @@ function boardFromItems(name, items) {
 // Parse pasted LLM output and create+open a list. Returns true on success.
 async function importFromText(text, topicName) {
   const data = extractJson(text);
-  if (!data) { toast("Couldn't read that — paste the JSON the AI gave you", "err"); return false; }
+  if (!data) { toast("Couldn't read that — paste the JSON answer", "err"); return false; }
   // Full export shape → reuse the standard import path.
   if (data && !Array.isArray(data) && Array.isArray(data.tiers) && Array.isArray(data.pool) && data.items && typeof data.items === "object") {
     const t = nowMs();
@@ -2609,7 +2609,7 @@ async function importFromText(text, topicName) {
   // Simple items shape.
   const items = itemsFromData(data);
   if (!items || !items.length) { toast("No items found in that JSON", "err"); return false; }
-  const name = (data && !Array.isArray(data) && data.name && String(data.name)) || topicName || "AI tier list";
+  const name = (data && !Array.isArray(data) && data.name && String(data.name)) || topicName || "Untitled list";
   const board = boardFromItems(name, items);
   return saveAndOpenNewBoard(board, {
     rehost: false,
@@ -2618,7 +2618,7 @@ async function importFromText(text, topicName) {
   });
 }
 
-// The Generate-with-AI dialog: topic → copy-paste prompt → paste JSON → list.
+// The Quick-fill dialog: topic → copy-paste prompt → paste JSON → list.
 function openGenerateModal() {
   const overlay = document.createElement("div");
   overlay.className = "overlay show";
@@ -2629,10 +2629,10 @@ function openGenerateModal() {
 
   const h = document.createElement("h3");
   h.className = "sync-title";
-  h.textContent = "✨ Generate with AI";
+  h.textContent = "Quick-fill from a topic";
   const intro = document.createElement("p");
   intro.className = "confirm-msg";
-  intro.textContent = "Pick a topic, copy the prompt into ChatGPT, Claude, Gemini — any AI — then paste its answer back here.";
+  intro.textContent = "Pick a topic, copy the prompt into ChatGPT, Claude, Gemini, or any chatbot, then paste its answer back here.";
 
   const topicField = document.createElement("div");
   topicField.className = "field";
@@ -2653,7 +2653,7 @@ function openGenerateModal() {
   const promptField = document.createElement("div");
   promptField.className = "field"; promptField.hidden = true;
   const promptLbl = document.createElement("label");
-  promptLbl.className = "gen-step"; promptLbl.textContent = "1. Copy this prompt into your AI";
+  promptLbl.className = "gen-step"; promptLbl.textContent = "1. Copy this prompt into your chatbot";
   const promptTa = document.createElement("textarea");
   promptTa.readOnly = true; promptTa.rows = 7;
   const copyBtn = document.createElement("button");
@@ -2663,7 +2663,7 @@ function openGenerateModal() {
   const pasteField = document.createElement("div");
   pasteField.className = "field";
   const pasteLbl = document.createElement("label");
-  pasteLbl.className = "gen-step"; pasteLbl.textContent = "2. Paste the AI's JSON answer here";
+  pasteLbl.className = "gen-step"; pasteLbl.textContent = "2. Paste the answer here";
   const pasteTa = document.createElement("textarea");
   pasteTa.rows = 5; pasteTa.placeholder = '{ "items": [ … ] }';
   pasteField.append(pasteLbl, pasteTa);
@@ -2715,7 +2715,7 @@ function openGenerateModal() {
 
   create.addEventListener("click", async () => {
     const text = pasteTa.value.trim();
-    if (!text) { pasteTa.focus(); toast("Paste the AI's JSON first", "err"); return; }
+    if (!text) { pasteTa.focus(); toast("Paste the answer first", "err"); return; }
     create.disabled = true;
     const ok = await importFromText(text, topicInput.value.trim());
     create.disabled = false;

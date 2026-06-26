@@ -11,7 +11,7 @@ A classic tier-list maker in a single, self-contained `index.html` — no backen
 - Classic **S / A / B / C / D / F** tiers — rename, recolor (color picker), reorder, add, or delete (deleted tiers' items return to the *Unranked* tray, never lost).
 - Drag items between tiers and reorder within a tier.
 - Each item has a **name** (shown as a caption) and an optional **description** (shown on hover).
-- **Generate with AI** — pick a topic and the app builds a ready-to-copy prompt for any LLM (ChatGPT, Claude, Gemini…); paste the JSON it returns and the items drop straight into a new list as monogram tiles. No API key, no server — bring your own AI.
+- **Quick-fill from a topic** — pick a topic and the app builds a ready-to-copy prompt for your chatbot of choice (ChatGPT, Claude, Gemini…); paste the JSON it returns and the items drop straight into a new list as monogram tiles. No API key, no server.
 - **Export PNG** (rendered natively, no library) per list, plus **Export JSON** / **Import list** (a JSON file becomes a new list) for backup and sharing.
 - Auto-saved in your browser via **IndexedDB** — all your lists persist across reloads.
 
