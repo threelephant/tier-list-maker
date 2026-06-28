@@ -708,6 +708,43 @@ let sb = null;
 try { if (window.supabase) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 catch (e) { console.warn("Supabase init failed:", e); }
 
+/* ============================================================
+   Analytics (privacy-light, write-only telemetry)
+   ============================================================ */
+// A SEPARATE anon-only client so events are never sent with a signed-in user's
+// JWT (which would tie them to a Google identity server-side). Fire-and-forget:
+// never blocks, never throws. No cookies / stored id / fingerprint. Honors DNT,
+// GPC, and a localStorage kill-switch.
+let sbAnon = null;
+try {
+  if (window.supabase)
+    sbAnon = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "tl-anon" },
+    });
+} catch (e) { /* ignore */ }
+
+function analyticsOff() {
+  try { if (localStorage.getItem("analytics:off") === "1") return true; } catch (e) { /* private mode */ }
+  const dnt = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+  if (dnt === "1" || dnt === "yes") return true;
+  if (navigator.globalPrivacyControl === true) return true;
+  return false;
+}
+
+function trackEvent(name, props) {
+  if (!sbAnon || analyticsOff()) return;
+  try {
+    const row = { event: name };               // whitelist payload to known columns only
+    if (props) {
+      if (props.mode)       row.mode = props.mode;
+      if (props.method)     row.method = props.method;
+      if (props.visibility) row.visibility = props.visibility;
+      if (props.format)     row.format = props.format;
+    }
+    sbAnon.from("events").insert(row).then(null, () => {});  // not awaited; reject swallowed
+  } catch (e) { /* never let telemetry break a user action */ }
+}
+
 let currentUser = null;   // { id, email, name, avatar } when signed in
 let canEdit = true;       // can the viewer edit the open board?
 const byId = (id) => document.getElementById(id);
@@ -1201,6 +1238,7 @@ async function createBoard() {
     toast("Couldn't create the list (cloud save failed)", "err");
     return;
   }
+  trackEvent("list_created", { mode: backend.mode });
   goBoard(b.id);
   setTimeout(() => { if (canEdit) { boardNameInput.focus(); boardNameInput.select(); } }, 60);
 }
@@ -1259,12 +1297,16 @@ function applyEditableUI() {
 
 function appLink(id) { return location.origin + location.pathname + "#/b/" + id; }
 
-async function setVisibility(v) {
+async function setVisibility(v, fromShare) {
   if (!state || !canEdit || backend.mode !== "cloud") return;
   state.visibility = v;
   const i = boardsCache.findIndex((b) => b.id === state.id);
   if (i >= 0) boardsCache[i] = state;
   await backend.save(state);
+  // Count a share only for direct dropdown changes; the share-button path fires
+  // its own "link" event (fromShare suppresses the double-count here).
+  if (!fromShare && (v === "shared" || v === "public"))
+    trackEvent("list_shared", { method: "visibility", visibility: v });
   applyEditableUI();
   const msg = v === "public" ? "Public — shareable by link, shown under “Public”"
             : v === "shared" ? "Shared — anyone with the link can view; shown under “Shared” on your home"
@@ -1277,10 +1319,14 @@ async function shareCurrent() {
   if (backend.mode !== "cloud") return toast("Sign in to share lists", "err");
   if (state.visibility === "private") {
     if (!confirm("Make this list shareable by link? It becomes “Shared” — anyone with the link can view. It stays on your home under “Shared” but isn't publicly listed.")) return;
-    await setVisibility("shared");
+    await setVisibility("shared", true);
   }
   const link = appLink(state.id);
-  try { await navigator.clipboard.writeText(link); toast("Share link copied"); }
+  try {
+    await navigator.clipboard.writeText(link);
+    toast("Share link copied");
+    trackEvent("list_shared", { method: "link", visibility: state.visibility });
+  }
   catch (e) { prompt("Copy this share link:", link); }
 }
 
@@ -2408,7 +2454,7 @@ async function exportPNG() {
   }
 
   canvas.toBlob((blob) => {
-    if (blob) { download(blob, "tier-list.png"); toast("PNG exported"); }
+    if (blob) { download(blob, "tier-list.png"); toast("PNG exported"); trackEvent("list_exported", { format: "png" }); }
   }, "image/png");
 }
 
@@ -2436,6 +2482,7 @@ function exportJSON() {
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
   download(blob, slugify(state.name) + ".json");
   toast("JSON exported");
+  trackEvent("list_exported", { format: "json" });
 }
 
 // Save a freshly-built board to the active backend and open it. Returns true on success.

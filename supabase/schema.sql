@@ -126,6 +126,33 @@ grant insert, update on public.profiles to authenticated;
 grant select on public.tier_lists to anon, authenticated;
 grant insert, update, delete on public.tier_lists to authenticated;
 
+-- ---------- analytics: events ----------
+-- Write-only, anonymous telemetry. No PII, no list ids, no client reads.
+-- Abuse is bounded by fixed enum CHECKs + server-set timestamp.
+create table if not exists public.events (
+  id          bigint generated always as identity primary key,
+  event       text not null check (event in ('list_created','list_shared','list_exported')),
+  mode        text check (mode in ('local','cloud')),
+  method      text check (method in ('link','visibility')),
+  visibility  text check (visibility in ('public','shared')),
+  format      text check (format in ('png','json')),
+  received_at timestamptz not null default now()   -- server clock; client value ignored
+);
+
+create index if not exists events_event_received_idx on public.events (event, received_at);
+
+alter table public.events enable row level security;
+
+-- Anyone (anonymous included) may INSERT a telemetry row; the column CHECKs above
+-- are the real guard. The with-check only blocks future-dated rows from skewing charts.
+drop policy if exists "Anyone can insert events" on public.events;
+create policy "Anyone can insert events"
+  on public.events for insert
+  with check (received_at <= now() + interval '1 minute');
+
+grant insert on public.events to anon, authenticated;
+-- deliberately NO select/update/delete grant: inspect via dashboard/service role only.
+
 -- ---------- storage: tier-images bucket ----------
 insert into storage.buckets (id, name, public)
 values ('tier-images', 'tier-images', true)

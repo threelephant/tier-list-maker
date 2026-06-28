@@ -22,3 +22,8 @@ Sign-in and sharing are backed by Supabase. To self-host: create a Supabase proj
 
 ## Notes
 Signed out, lists live only in this browser (IndexedDB). To share without an account, use **Export JSON** (re-importable) or **Export PNG** (image). Signed in, lists sync to your account and public lists are shareable by link.
+
+## Privacy
+Privacy-light analytics: the app records three anonymous counts — a list **created**, **shared**, or **exported** — each with only low-cardinality flags (local vs. cloud, share method, visibility, export format). No cookies, no identifier, no fingerprint, and no list, image, or account data is sent. Events are written (write-only — the client can't read them back) to a Supabase `events` table via a session-less anonymous client, so they're never tied to your Google account. Like any web request, Supabase's edge may log the request IP transiently — we never store or look at it.
+
+Analytics is skipped automatically when your browser sends **Do-Not-Track** or **Global Privacy Control**. To opt out explicitly, run `localStorage.setItem("analytics:off","1")` in the browser console. Run [supabase/schema.sql](supabase/schema.sql) to create the `events` table when self-hosting.
