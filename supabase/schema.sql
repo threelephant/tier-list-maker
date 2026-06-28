@@ -13,6 +13,8 @@
 --   2. Authentication → URL Configuration → Redirect URLs → add:
 --        https://threelephant.github.io/tier-list-maker/
 --        http://localhost:4178/
+--   3. (optional) Database → Extensions → enable "pg_cron" — powers the daily
+--      analytics-retention job below. Skipped gracefully if left disabled.
 -- ============================================================
 
 -- ---------- profiles ----------
@@ -152,6 +154,25 @@ create policy "Anyone can insert events"
 
 grant insert on public.events to anon, authenticated;
 -- deliberately NO select/update/delete grant: inspect via dashboard/service role only.
+
+-- ---------- analytics: retention ----------
+-- Daily prune so the append-only events log can't grow unbounded. Requires the
+-- pg_cron extension — enable it once in Dashboard → Database → Extensions
+-- ("pg_cron"). If it isn't enabled, this block no-ops with a notice so the rest
+-- of the file still runs. Manual alternative (no pg_cron):
+--   delete from public.events where received_at < now() - interval '90 days';
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule(
+      'events-retention-90d',   -- re-running upserts by job name (idempotent)
+      '0 3 * * *',              -- daily at 03:00 UTC
+      $job$delete from public.events where received_at < now() - interval '90 days'$job$
+    );
+  else
+    raise notice 'pg_cron not enabled — skipping events retention job. Enable it in Dashboard → Database → Extensions, then re-run this file.';
+  end if;
+end $$;
 
 -- ---------- storage: tier-images bucket ----------
 insert into storage.buckets (id, name, public)

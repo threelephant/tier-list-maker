@@ -480,6 +480,11 @@
   .menu-empty-art { font-size: 54px; line-height: 1; }
   .menu-empty h2 { color: var(--text); margin: 12px 0 6px; }
   .menu-empty p { margin: 0 0 18px; }
+  .app-footer { margin-top: 28px; padding: 16px 0 8px; border-top: 1px solid var(--line);
+                display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .app-footer .footer-note { font-size: 12px; color: var(--muted); }
+  .checkbox-row.is-disabled { opacity: .6; }
+  .checkbox-row input:disabled { cursor: not-allowed; }
 
   /* ---------- Auth (avatar + menu) ---------- */
   .auth-area { display: flex; align-items: center; gap: 8px; margin-left: auto; position: relative; }
@@ -575,6 +580,13 @@
         <p>Create your first tier list, quick-fill one from a topic, or import one from a JSON file.</p>
         <button class="btn primary" id="newListBtn2">+ New list</button>
       </div>
+      <footer class="app-footer">
+        <label class="checkbox-row">
+          <input type="checkbox" id="analyticsToggle" />
+          <span>Send anonymous usage analytics</span>
+        </label>
+        <span class="footer-note" id="analyticsNote">No cookies or personal data — just counts of lists created, shared, and exported.</span>
+      </footer>
     </main>
   </div>
 
@@ -2889,6 +2901,28 @@ document.getElementById("newListBtn").addEventListener("click", createBoard);
 document.getElementById("newListBtn2").addEventListener("click", createBoard);
 document.getElementById("importListBtn").addEventListener("click", importList);
 document.getElementById("generateBtn").addEventListener("click", openGenerateModal);
+
+// Footer analytics opt-out toggle — writes the same localStorage key analyticsOff() reads.
+byId("analyticsToggle").addEventListener("change", (e) => {
+  try {
+    if (e.target.checked) localStorage.removeItem("analytics:off");
+    else localStorage.setItem("analytics:off", "1");
+  } catch (err) { /* private mode */ }
+  toast(e.target.checked ? "Anonymous analytics on" : "Analytics off — nothing will be sent");
+});
+(function initAnalyticsToggle() {
+  const cb = byId("analyticsToggle");
+  if (!cb) return;
+  // When the browser itself opts out (DNT/GPC), analytics is off regardless — say so.
+  const dnt = navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack;
+  if (dnt === "1" || dnt === "yes" || navigator.globalPrivacyControl === true) {
+    cb.checked = false; cb.disabled = true;
+    cb.closest(".checkbox-row").classList.add("is-disabled");
+    byId("analyticsNote").textContent = "Analytics off — your browser sends Do Not Track.";
+    return;
+  }
+  try { cb.checked = localStorage.getItem("analytics:off") !== "1"; } catch (e) { /* private mode */ }
+})();
 
 /* ============================================================
    Boot
