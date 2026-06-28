@@ -59,7 +59,7 @@ Core abstractions:
 
 ## Deploy
 
-GitHub Pages → `https://threelephant.github.io/tier-list-maker/`. Because routing is hash-based, crawlers never see per-list content — **every shared link shows the same static `og.png`** card.
+GitHub Pages → `https://threelephant.github.io/tier-list-maker/`. **To deploy, always push to `main`** — there is no separate build or release step; a push to `main` publishes the site. Because routing is hash-based, crawlers never see per-list content — **every shared link shows the same static `og.png`** card.
 
 ## Gotchas
 
